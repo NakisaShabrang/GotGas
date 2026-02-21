@@ -31,11 +31,7 @@ export default function LoginPage() {
       if (response.ok) {
         setMessage(data.message);
         setMessageType('success');
-        
-        // Store user in localStorage
         localStorage.setItem('user', data.username);
-        
-        // Redirect to dashboard
         setTimeout(() => router.push('/dashboard'), 1000);
       } else {
         setMessage(data.error);
