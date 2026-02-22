@@ -1,0 +1,11 @@
+# Python
+backend/venv/
+venv/
+__pycache__/
+
+# Node
+node_modules/
+.next/
+
+# Env files
+.env
