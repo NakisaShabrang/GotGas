@@ -40,7 +40,7 @@ function milesToMeters(miles: number) {
 }
 
 function buildPlaceLabel(tags: Record<string, string> | undefined) {
-  if (!tags) return 'OpenStreetMap';
+  if (!tags) return '';
 
   const addressParts = [
     tags['addr:housenumber'] && tags['addr:street']
@@ -51,7 +51,14 @@ function buildPlaceLabel(tags: Record<string, string> | undefined) {
     tags['addr:postcode'],
   ].filter(Boolean);
 
-  return addressParts.length > 0 ? addressParts.join(', ') : 'OpenStreetMap';
+  if (addressParts.length > 0) {
+    return addressParts.join(', ');
+  }
+
+  // Fallback: try to construct address from available tags
+  const fallbackParts = [tags['name'], tags['street'], tags['city'], tags['postcode']].filter(Boolean);
+
+  return fallbackParts.length > 0 ? fallbackParts.join(', ') : '';
 }
 
 function escapeHtml(value: string) {
@@ -82,7 +89,6 @@ function getAvailableFuelTypes(tags: Record<string, string> | undefined) {
 function buildStationPopupHtml(station: any, centerLat: number, centerLng: number) {
   const tags = station?.properties?.tags as Record<string, string> | undefined;
   const name = station?.text || tags?.name || tags?.brand || 'Gas Station';
-  const brand = tags?.brand;
   const operator = tags?.operator;
   const address = station?.place_name;
   const openingHours = tags?.opening_hours;
@@ -90,6 +96,7 @@ function buildStationPopupHtml(station: any, centerLat: number, centerLng: numbe
   const website = tags?.website || tags?.['contact:website'];
   const fuelTypes = getAvailableFuelTypes(tags);
   const coordinates = station?.geometry?.coordinates;
+  const geocodedAddress = station?.geocoded_address; // New fallback for reverse geocoded address
 
   let distanceLabel = '';
   if (coordinates && coordinates.length >= 2) {
@@ -98,7 +105,6 @@ function buildStationPopupHtml(station: any, centerLat: number, centerLng: numbe
   }
 
   const details = [
-    brand ? `<div style="margin-bottom:4px;"><strong style="color:#111;">Brand:</strong> <span style="color:#111;">${escapeHtml(brand)}</span></div>` : '',
     operator ? `<div style="margin-bottom:4px;"><strong style="color:#111;">Operator:</strong> <span style="color:#111;">${escapeHtml(operator)}</span></div>` : '',
     openingHours ? `<div style="margin-bottom:4px;"><strong style="color:#111;">Hours:</strong> <span style="color:#111;">${escapeHtml(openingHours)}</span></div>` : '',
     phone ? `<div style="margin-bottom:4px;"><strong style="color:#111;">Phone:</strong> <span style="color:#111;">${escapeHtml(phone)}</span></div>` : '',
@@ -108,10 +114,10 @@ function buildStationPopupHtml(station: any, centerLat: number, centerLng: numbe
   ]
     .filter(Boolean)
     .join('');
-
+  const displayAddress = address || geocodedAddress;
   return `<div style="min-width:220px;line-height:1.45;background:#ffffff;color:#111111;padding:2px;">
     <div style="font-weight:700;font-size:15px;margin-bottom:6px;color:#000;">${escapeHtml(name)}</div>
-    ${address ? `<div style="margin-bottom:8px;color:#111;font-size:13px;">${escapeHtml(address)}</div>` : ''}
+    ${displayAddress ? `<div style="margin-bottom:8px;color:#111;font-size:13px;">${escapeHtml(displayAddress)}</div>` : ''}
     ${details || '<div style="color:#111;">No additional details available.</div>'}
   </div>`;
 }
@@ -153,16 +159,12 @@ export default function MapPage() {
 
     const fetchPlaces = async (lat: number, lng: number) => {
       setLoading(true);
+      setSearchError('');
       try {
         const selectedRadiusMiles = radiusMilesRef.current;
         const radiusMeters = milesToMeters(selectedRadiusMiles);
-        const overpassQuery = `[out:json][timeout:25];
-(
-  node["amenity"="fuel"](around:${radiusMeters},${lat},${lng});
-  way["amenity"="fuel"](around:${radiusMeters},${lat},${lng});
-  relation["amenity"="fuel"](around:${radiusMeters},${lat},${lng});
-);
-out center;`;
+
+        const overpassQuery = `[out:json][timeout:30][maxsize:536870912];(node["amenity"="fuel"](around:${radiusMeters},${lat},${lng});way["amenity"="fuel"](around:${radiusMeters},${lat},${lng});relation["amenity"="fuel"](around:${radiusMeters},${lat},${lng}););out center;`;
 
         const res = await fetch('https://overpass-api.de/api/interpreter', {
           method: 'POST',
@@ -170,22 +172,13 @@ out center;`;
           body: `data=${encodeURIComponent(overpassQuery)}`,
         });
 
-        const contentType = res.headers.get('content-type') || '';
         const rawBody = await res.text();
-
-        if (!res.ok) {
-          throw new Error(`OpenStreetMap request failed with status ${res.status}.`);
-        }
-
-        const looksLikeJson = contentType.includes('application/json') || rawBody.trim().startsWith('{');
-        if (!looksLikeJson) {
-          throw new Error('OpenStreetMap returned a non-JSON response.');
-        }
+        if (!res.ok) throw new Error(`OpenStreetMap request failed with status ${res.status}.`);
 
         let data: any;
         try {
           data = JSON.parse(rawBody);
-        } catch {
+        } catch (err) {
           throw new Error('OpenStreetMap returned invalid JSON.');
         }
 
@@ -193,60 +186,98 @@ out center;`;
 
         const features = elements
           .map((element: any) => {
-            const latitude = element.lat ?? element.center?.lat;
-            const longitude = element.lon ?? element.center?.lon;
-            if (typeof latitude !== 'number' || typeof longitude !== 'number') return null;
+            let lat = typeof element.lat === 'number' ? element.lat : element.center?.lat;
+            let lon = typeof element.lon === 'number' ? element.lon : element.center?.lon;
+
+            // For ways and relations, calculate a simple center from geometry if available
+            if ((element.type === 'way' || element.type === 'relation') && element.geometry && (!lat || !lon)) {
+              const lats = element.geometry.map((n: any) => n.lat).filter((v: any) => typeof v === 'number');
+              const lons = element.geometry.map((n: any) => n.lon).filter((v: any) => typeof v === 'number');
+              if (lats.length > 0 && lons.length > 0) {
+                lat = (Math.min(...lats) + Math.max(...lats)) / 2;
+                lon = (Math.min(...lons) + Math.max(...lons)) / 2;
+              }
+            }
+
+            if (typeof lat !== 'number' || typeof lon !== 'number') return null;
 
             return {
               id: `osm-${element.type}-${element.id}`,
               text: element.tags?.name || element.tags?.brand || 'Gas Station',
               place_name: buildPlaceLabel(element.tags),
-              properties: {
-                tags: element.tags || {},
-              },
-              geometry: {
-                coordinates: [longitude, latitude],
-              },
+              properties: { tags: element.tags || {} },
+              geometry: { coordinates: [lon, lat] },
             };
           })
           .filter(Boolean);
 
         const inRadiusFeatures = features.filter((feature: any) => {
-          const coordinates = feature?.geometry?.coordinates;
-          if (!coordinates || coordinates.length < 2) return false;
-          const [featureLng, featureLat] = coordinates;
-          return distanceMiles(lat, lng, featureLat, featureLng) <= selectedRadiusMiles;
+          const coords = feature?.geometry?.coordinates;
+          if (!coords || coords.length < 2) return false;
+          const [fLng, fLat] = coords;
+          return distanceMiles(lat, lng, fLat, fLng) <= selectedRadiusMiles;
         });
 
+        // Reverse geocode missing addresses (but be conservative about requests)
+        const enrichedFeatures = await Promise.all(
+          inRadiusFeatures.map(async (feature: any, index: number) => {
+            const placeName = feature?.place_name;
+            const isRealAddress = placeName && placeName.includes(',');
+            if (isRealAddress) return feature;
+
+            const coords = feature?.geometry?.coordinates;
+            if (!coords || coords.length < 2) return feature;
+
+            try {
+              const [lng2, lat2] = coords;
+              await new Promise((r) => setTimeout(r, index * 50));
+              const reverseGeocodeUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng2},${lat2}.json?limit=1&access_token=${token}`;
+              const r = await fetch(reverseGeocodeUrl);
+              if (!r.ok) return feature;
+              const json = await r.json();
+              const result = json?.features?.[0];
+              if (result?.place_name) return { ...feature, geocoded_address: result.place_name };
+            } catch (err) {
+              // ignore per-feature errors
+            }
+
+            return feature;
+          })
+        );
+
+        // remove old markers
         stationMarkersRef.current.forEach((m) => m.remove());
         stationMarkersRef.current = [];
 
-        setStations(inRadiusFeatures);
+        setStations(enrichedFeatures);
 
-        inRadiusFeatures.forEach((f: any) => {
-          if (!f.geometry || !f.geometry.coordinates) return;
-          const [lng2, lat2] = f.geometry.coordinates;
-          const marker = new mapboxRef.current.Marker({ color: '#e53935' })
-            .setLngLat([lng2, lat2])
-            .setPopup(new mapboxRef.current.Popup({ offset: 8 }).setHTML(buildStationPopupHtml(f, lat, lng)))
-            .addTo(mapInstanceRef.current);
-          stationMarkersRef.current.push(marker);
-        });
+        // create markers and bounds
+        if (mapInstanceRef.current && mapboxRef.current) {
+          let bounds: any = null;
+          enrichedFeatures.forEach((f: any) => {
+            const coords = f?.geometry?.coordinates;
+            if (!coords || coords.length < 2) return;
+            const [lng2, lat2] = coords;
+            const marker = new mapboxRef.current.Marker({ color: '#e53935' })
+              .setLngLat([lng2, lat2])
+              .setPopup(new mapboxRef.current.Popup({ offset: 8 }).setHTML(buildStationPopupHtml(f, lat, lng)))
+              .addTo(mapInstanceRef.current);
+            stationMarkersRef.current.push(marker);
 
-        if (inRadiusFeatures.length > 0 && mapInstanceRef.current) {
-          const bounds = new mapboxRef.current.LngLatBounds([lng, lat], [lng, lat]);
-          inRadiusFeatures.forEach((feature: any) => {
-            const coordinates = feature?.geometry?.coordinates;
-            if (!coordinates || coordinates.length < 2) return;
-            bounds.extend([coordinates[0], coordinates[1]]);
+            if (!bounds) bounds = new mapboxRef.current.LngLatBounds([lng2, lat2], [lng2, lat2]);
+            bounds.extend([lng2, lat2]);
           });
-          mapInstanceRef.current.fitBounds(bounds, { padding: 50, maxZoom: 13 });
+
+          if (bounds) {
+            mapInstanceRef.current.fitBounds(bounds, { padding: 50, maxZoom: 13 });
+          }
         }
       } catch (err) {
         console.error('OpenStreetMap places fetch failed', err);
         setSearchError('OpenStreetMap is temporarily unavailable. Please try again in a moment.');
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
 
     refreshStationsRef.current = fetchPlaces;
@@ -267,9 +298,7 @@ out center;`;
       setSearchError('');
 
       try {
-        const geocodeUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(
-          trimmed
-        )}.json?limit=1&autocomplete=true&types=address,postcode,place,locality,neighborhood&access_token=${token}`;
+        const geocodeUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(trimmed)}.json?limit=1&autocomplete=true&types=address,postcode,place,locality,neighborhood&access_token=${token}`;
         const res = await fetch(geocodeUrl);
         const data = await res.json();
         const feature = data?.features?.[0];
@@ -467,25 +496,29 @@ out center;`;
           {!loading && stations.length > 0 && <p style={{ marginTop: 0 }}>Showing {stations.length} gas stations within {radiusMiles} miles.</p>}
           {!loading && stations.length === 0 && <p style={{ marginTop: 0 }}>No stations found.</p>}
           <ul style={{ paddingLeft: '1rem', marginBottom: 0 }}>
-            {stations.map((s, i) => (
-              <li key={s.id || s.properties?.id || i} style={{ marginBottom: '0.75rem' }}>
-                <button
-                  type="button"
-                  onClick={() => onStationClick(s, i)}
-                  style={{
-                    all: 'unset',
-                    display: 'block',
-                    width: '100%',
-                    cursor: 'pointer',
-                    borderRadius: 8,
-                    padding: '0.35rem 0.4rem',
-                  }}
-                >
-                  <strong>{s.text}</strong>
-                  {s.place_name && <div style={{ opacity: 0.85 }}>{s.place_name}</div>}
-                </button>
-              </li>
-            ))}
+            {stations.map((s, i) => {
+              // Display address in sidebar - prefer place_name, fallback to geocoded_address
+              const displayAddress = s.place_name ? s.place_name : s.geocoded_address;
+              return (
+                <li key={s.id || s.properties?.id || i} style={{ marginBottom: '0.75rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => onStationClick(s, i)}
+                    style={{
+                      all: 'unset',
+                      display: 'block',
+                      width: '100%',
+                      cursor: 'pointer',
+                      borderRadius: 8,
+                      padding: '0.35rem 0.4rem',
+                    }}
+                  >
+                    <strong>{s.text}</strong>
+                    {displayAddress && <div style={{ opacity: 0.85, fontSize: '0.85rem' }}>{displayAddress}</div>}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </div>
       </div>
