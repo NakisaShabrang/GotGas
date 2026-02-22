@@ -51,7 +51,19 @@ function buildPlaceLabel(tags: Record<string, string> | undefined) {
     tags['addr:postcode'],
   ].filter(Boolean);
 
-  return addressParts.length > 0 ? addressParts.join(', ') : 'OpenStreetMap';
+  if (addressParts.length > 0) {
+    return addressParts.join(', ');
+  }
+
+  // Fallback: try to construct address from available tags
+  const fallbackParts = [
+    tags['name'],
+    tags['street'],
+    tags['city'],
+    tags['postcode']
+  ].filter(Boolean);
+
+  return fallbackParts.length > 0 ? fallbackParts.join(', ') : 'OpenStreetMap';
 }
 
 function escapeHtml(value: string) {
@@ -90,6 +102,7 @@ function buildStationPopupHtml(station: any, centerLat: number, centerLng: numbe
   const website = tags?.website || tags?.['contact:website'];
   const fuelTypes = getAvailableFuelTypes(tags);
   const coordinates = station?.geometry?.coordinates;
+  const geocodedAddress = station?.geocoded_address; // New fallback for reverse geocoded address
 
   let distanceLabel = '';
   if (coordinates && coordinates.length >= 2) {
@@ -109,9 +122,10 @@ function buildStationPopupHtml(station: any, centerLat: number, centerLng: numbe
     .filter(Boolean)
     .join('');
 
+  const displayAddress = address && address !== 'OpenStreetMap' ? address : geocodedAddress;
   return `<div style="min-width:220px;line-height:1.45;background:#ffffff;color:#111111;padding:2px;">
     <div style="font-weight:700;font-size:15px;margin-bottom:6px;color:#000;">${escapeHtml(name)}</div>
-    ${address ? `<div style="margin-bottom:8px;color:#111;font-size:13px;">${escapeHtml(address)}</div>` : ''}
+    ${displayAddress ? `<div style="margin-bottom:8px;color:#111;font-size:13px;">${escapeHtml(displayAddress)}</div>` : ''}
     ${details || '<div style="color:#111;">No additional details available.</div>'}
   </div>`;
 }
@@ -156,13 +170,13 @@ export default function MapPage() {
       try {
         const selectedRadiusMiles = radiusMilesRef.current;
         const radiusMeters = milesToMeters(selectedRadiusMiles);
-        const overpassQuery = `[out:json][timeout:25];
+        const overpassQuery = `[out:json][timeout:30][maxsize:536870912];
 (
   node["amenity"="fuel"](around:${radiusMeters},${lat},${lng});
   way["amenity"="fuel"](around:${radiusMeters},${lat},${lng});
   relation["amenity"="fuel"](around:${radiusMeters},${lat},${lng});
 );
-out center;`;
+out geom;`;
 
         const res = await fetch('https://overpass-api.de/api/interpreter', {
           method: 'POST',
@@ -193,8 +207,19 @@ out center;`;
 
         const features = elements
           .map((element: any) => {
-            const latitude = element.lat ?? element.center?.lat;
-            const longitude = element.lon ?? element.center?.lon;
+            let latitude = element.lat ?? element.center?.lat;
+            let longitude = element.lon ?? element.center?.lon;
+
+            // For ways and relations, calculate center from geometry
+            if ((element.type === 'way' || element.type === 'relation') && element.geometry) {
+              const lats = element.geometry.map((n: any) => n.lat).filter((l: number) => typeof l === 'number');
+              const lons = element.geometry.map((n: any) => n.lon).filter((l: number) => typeof l === 'number');
+              if (lats.length > 0 && lons.length > 0) {
+                latitude = (Math.min(...lats) + Math.max(...lats)) / 2;
+                longitude = (Math.min(...lons) + Math.max(...lons)) / 2;
+              }
+            }
+
             if (typeof latitude !== 'number' || typeof longitude !== 'number') return null;
 
             return {
@@ -218,12 +243,52 @@ out center;`;
           return distanceMiles(lat, lng, featureLat, featureLng) <= selectedRadiusMiles;
         });
 
+        // Reverse geocode missing addresses
+        const enrichedFeatures = await Promise.all(
+          inRadiusFeatures.map(async (feature: any, index: number) => {
+            const place_name = feature?.place_name;
+            
+            // Check if place_name is a real address (has commas separating city, state, zip)
+            // vs just a store name (no commas or just a single name)
+            const isRealAddress = place_name && place_name !== 'OpenStreetMap' && place_name.includes(',');
+            
+            if (isRealAddress) {
+              return feature; // Already has a good address
+            }
+
+            // Try reverse geocoding for missing or incomplete addresses
+            const coordinates = feature?.geometry?.coordinates;
+            if (!coordinates || coordinates.length < 2) return feature;
+
+            try {
+              const [lng2, lat2] = coordinates;
+              // Add small delay to prevent rate limiting (stagger requests)
+              await new Promise(resolve => setTimeout(resolve, index * 50));
+              
+              const reverseGeocodeUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng2},${lat2}.json?limit=1&access_token=${token}`;
+              const res = await fetch(reverseGeocodeUrl);
+              const data = await res.json();
+              const result = data?.features?.[0];
+              if (result?.place_name) {
+                return {
+                  ...feature,
+                  geocoded_address: result.place_name,
+                };
+              }
+            } catch (err) {
+              console.error('Reverse geocode failed for', feature?.text, err);
+            }
+
+            return feature;
+          })
+        );
+
         stationMarkersRef.current.forEach((m) => m.remove());
         stationMarkersRef.current = [];
 
-        setStations(inRadiusFeatures);
+        setStations(enrichedFeatures);
 
-        inRadiusFeatures.forEach((f: any) => {
+        enrichedFeatures.forEach((f: any) => {
           if (!f.geometry || !f.geometry.coordinates) return;
           const [lng2, lat2] = f.geometry.coordinates;
           const marker = new mapboxRef.current.Marker({ color: '#e53935' })
@@ -233,9 +298,9 @@ out center;`;
           stationMarkersRef.current.push(marker);
         });
 
-        if (inRadiusFeatures.length > 0 && mapInstanceRef.current) {
+        if (enrichedFeatures.length > 0 && mapInstanceRef.current) {
           const bounds = new mapboxRef.current.LngLatBounds([lng, lat], [lng, lat]);
-          inRadiusFeatures.forEach((feature: any) => {
+          enrichedFeatures.forEach((feature: any) => {
             const coordinates = feature?.geometry?.coordinates;
             if (!coordinates || coordinates.length < 2) return;
             bounds.extend([coordinates[0], coordinates[1]]);
@@ -467,25 +532,29 @@ out center;`;
           {!loading && stations.length > 0 && <p style={{ marginTop: 0 }}>Showing {stations.length} gas stations within {radiusMiles} miles.</p>}
           {!loading && stations.length === 0 && <p style={{ marginTop: 0 }}>No stations found.</p>}
           <ul style={{ paddingLeft: '1rem', marginBottom: 0 }}>
-            {stations.map((s, i) => (
-              <li key={s.id || s.properties?.id || i} style={{ marginBottom: '0.75rem' }}>
-                <button
-                  type="button"
-                  onClick={() => onStationClick(s, i)}
-                  style={{
-                    all: 'unset',
-                    display: 'block',
-                    width: '100%',
-                    cursor: 'pointer',
-                    borderRadius: 8,
-                    padding: '0.35rem 0.4rem',
-                  }}
-                >
-                  <strong>{s.text}</strong>
-                  {s.place_name && <div style={{ opacity: 0.85 }}>{s.place_name}</div>}
-                </button>
-              </li>
-            ))}
+            {stations.map((s, i) => {
+              // Display address in sidebar - use geocoded_address as fallback
+              const displayAddress = (s.place_name && s.place_name !== 'OpenStreetMap') ? s.place_name : s.geocoded_address;
+              return (
+                <li key={s.id || s.properties?.id || i} style={{ marginBottom: '0.75rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => onStationClick(s, i)}
+                    style={{
+                      all: 'unset',
+                      display: 'block',
+                      width: '100%',
+                      cursor: 'pointer',
+                      borderRadius: 8,
+                      padding: '0.35rem 0.4rem',
+                    }}
+                  >
+                    <strong>{s.text}</strong>
+                    {displayAddress && <div style={{ opacity: 0.85, fontSize: '0.85rem' }}>{displayAddress}</div>}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </div>
       </div>
