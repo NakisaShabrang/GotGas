@@ -4,6 +4,24 @@ import { useEffect, useRef, useState } from 'react';
 
 const DEFAULT_SEARCH_RADIUS_MILES = 10;
 
+type FuelPrices = {
+  regular: number;
+  midGrade: number;
+  premium: number;
+  diesel: number;
+};
+
+type StationFeature = {
+  id: string;
+  text: string;
+  place_name: string;
+  geocoded_address?: string;
+  isCheapest?: boolean;
+  properties: { tags: Record<string, string> };
+  geometry: { coordinates: [number, number] };
+  fuelPrices: FuelPrices;
+};
+
 function milesToKilometers(miles: number) {
   return miles * 1.609344;
 }
@@ -37,6 +55,40 @@ function distanceMiles(fromLat: number, fromLng: number, toLat: number, toLng: n
 
 function milesToMeters(miles: number) {
   return Math.round(miles * 1609.344);
+}
+
+const MIN_FUEL_PRICE = 2;
+const MAX_FUEL_PRICE = 3.5;
+
+function randomPriceInRange(min: number, max: number) {
+  if (max <= min) {
+    return Number(min.toFixed(2));
+  }
+
+  return Number((Math.random() * (max - min) + min).toFixed(2));
+}
+
+function generateFuelPrices(): FuelPrices {
+  const regular = randomPriceInRange(MIN_FUEL_PRICE, 3.05);
+
+  const midFloor = Math.min(MAX_FUEL_PRICE, regular + 0.12);
+  const midCeiling = Math.min(MAX_FUEL_PRICE, regular + 0.42);
+  const midGrade = randomPriceInRange(midFloor, midCeiling);
+
+  const premiumFloor = Math.min(MAX_FUEL_PRICE, midGrade + 0.12);
+  const premiumCeiling = Math.min(MAX_FUEL_PRICE, midGrade + 0.45);
+  const premium = randomPriceInRange(premiumFloor, premiumCeiling);
+
+  const dieselFloor = Math.min(MAX_FUEL_PRICE, regular + 0.05);
+  const dieselCeiling = Math.min(MAX_FUEL_PRICE, Math.max(midGrade + 0.1, regular + 0.65));
+  const diesel = randomPriceInRange(dieselFloor, dieselCeiling);
+
+  return {
+    regular,
+    midGrade,
+    premium,
+    diesel,
+  };
 }
 
 function buildPlaceLabel(tags: Record<string, string> | undefined) {
@@ -86,7 +138,7 @@ function getAvailableFuelTypes(tags: Record<string, string> | undefined) {
     .map(([key]) => titleCase(key.replace('fuel:', '')));
 }
 
-function buildStationPopupHtml(station: any, centerLat: number, centerLng: number) {
+function buildStationPopupHtml(station: StationFeature, centerLat: number, centerLng: number) {
   const tags = station?.properties?.tags as Record<string, string> | undefined;
   const name = station?.text || tags?.name || tags?.brand || 'Gas Station';
   const operator = tags?.operator;
@@ -95,6 +147,7 @@ function buildStationPopupHtml(station: any, centerLat: number, centerLng: numbe
   const phone = tags?.phone || tags?.['contact:phone'];
   const website = tags?.website || tags?.['contact:website'];
   const fuelTypes = getAvailableFuelTypes(tags);
+  const fuelPrices = station?.fuelPrices;
   const coordinates = station?.geometry?.coordinates;
   const geocodedAddress = station?.geocoded_address; // New fallback for reverse geocoded address
 
@@ -105,11 +158,17 @@ function buildStationPopupHtml(station: any, centerLat: number, centerLng: numbe
   }
 
   const details = [
+    station.isCheapest
+      ? '<div style="margin-bottom:6px;"><strong style="color:#0f766e;">Cheapest in this list</strong></div>'
+      : '',
     operator ? `<div style="margin-bottom:4px;"><strong style="color:#111;">Operator:</strong> <span style="color:#111;">${escapeHtml(operator)}</span></div>` : '',
     openingHours ? `<div style="margin-bottom:4px;"><strong style="color:#111;">Hours:</strong> <span style="color:#111;">${escapeHtml(openingHours)}</span></div>` : '',
     phone ? `<div style="margin-bottom:4px;"><strong style="color:#111;">Phone:</strong> <span style="color:#111;">${escapeHtml(phone)}</span></div>` : '',
     website ? `<div style="margin-bottom:4px;"><strong style="color:#111;">Website:</strong> <span style="color:#111;">${escapeHtml(website)}</span></div>` : '',
     fuelTypes.length > 0 ? `<div style="margin-bottom:4px;"><strong style="color:#111;">Fuel:</strong> <span style="color:#111;">${escapeHtml(fuelTypes.join(', '))}</span></div>` : '',
+    fuelPrices
+      ? `<div style="margin-bottom:4px;"><strong style="color:#111;">Prices:</strong> <span style="color:#111;">Regular $${fuelPrices.regular.toFixed(2)} · Mid $${fuelPrices.midGrade.toFixed(2)} · Premium $${fuelPrices.premium.toFixed(2)} · Diesel $${fuelPrices.diesel.toFixed(2)}</span></div>`
+      : '',
     distanceLabel ? `<div style="margin-bottom:4px;"><strong style="color:#111;">Distance:</strong> <span style="color:#111;">${escapeHtml(distanceLabel)}</span></div>` : '',
   ]
     .filter(Boolean)
@@ -123,7 +182,7 @@ function buildStationPopupHtml(station: any, centerLat: number, centerLng: numbe
 }
 
 export default function MapPage() {
-  const [stations, setStations] = useState<any[]>([]);
+  const [stations, setStations] = useState<StationFeature[]>([]);
   const [loading, setLoading] = useState(false);
   const [locationQuery, setLocationQuery] = useState('');
   const [radiusMiles, setRadiusMiles] = useState(DEFAULT_SEARCH_RADIUS_MILES);
@@ -209,9 +268,9 @@ export default function MapPage() {
               geometry: { coordinates: [lon, lat] },
             };
           })
-          .filter(Boolean);
+          .filter(Boolean) as Array<Omit<StationFeature, 'fuelPrices'>>;
 
-        const inRadiusFeatures = features.filter((feature: any) => {
+        const inRadiusFeatures = features.filter((feature) => {
           const coords = feature?.geometry?.coordinates;
           if (!coords || coords.length < 2) return false;
           const [fLng, fLat] = coords;
@@ -220,7 +279,7 @@ export default function MapPage() {
 
         // Reverse geocode missing addresses (but be conservative about requests)
         const enrichedFeatures = await Promise.all(
-          inRadiusFeatures.map(async (feature: any, index: number) => {
+          inRadiusFeatures.map(async (feature, index) => {
             const placeName = feature?.place_name;
             const isRealAddress = placeName && placeName.includes(',');
             if (isRealAddress) return feature;
@@ -245,20 +304,28 @@ export default function MapPage() {
           })
         );
 
+        const stationsWithPrices: StationFeature[] = enrichedFeatures
+          .map((feature) => ({ ...feature, fuelPrices: generateFuelPrices() }))
+          .sort((a, b) => a.fuelPrices.regular - b.fuelPrices.regular)
+          .map((station, index) => ({ ...station, isCheapest: index === 0 }));
+
         // remove old markers
         stationMarkersRef.current.forEach((m) => m.remove());
         stationMarkersRef.current = [];
 
-        setStations(enrichedFeatures);
+        setStations(stationsWithPrices);
 
         // create markers and bounds
         if (mapInstanceRef.current && mapboxRef.current) {
           let bounds: any = null;
-          enrichedFeatures.forEach((f: any) => {
+          stationsWithPrices.forEach((f) => {
             const coords = f?.geometry?.coordinates;
             if (!coords || coords.length < 2) return;
             const [lng2, lat2] = coords;
-            const marker = new mapboxRef.current.Marker({ color: '#e53935' })
+            const marker = new mapboxRef.current.Marker({
+              color: f.isCheapest ? '#16a34a' : '#e53935',
+              scale: f.isCheapest ? 1.45 : 1,
+            })
               .setLngLat([lng2, lat2])
               .setPopup(new mapboxRef.current.Popup({ offset: 8 }).setHTML(buildStationPopupHtml(f, lat, lng)))
               .addTo(mapInstanceRef.current);
@@ -370,6 +437,10 @@ export default function MapPage() {
   const onSubmitLocation = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
+    if (searchingLocation || loading) {
+      return;
+    }
+
     if (!locationQuery.trim() && currentCenterRef.current) {
       setSearchError('');
       await refreshStationsRef.current(currentCenterRef.current.lat, currentCenterRef.current.lng);
@@ -386,7 +457,7 @@ export default function MapPage() {
     setRadiusMiles(clampedRadius);
   };
 
-  const onStationClick = (station: any, index: number) => {
+  const onStationClick = (station: StationFeature, index: number) => {
     const coordinates = station?.geometry?.coordinates;
     if (!coordinates || coordinates.length < 2 || !mapInstanceRef.current) return;
 
@@ -452,7 +523,7 @@ export default function MapPage() {
         />
         <button
           type="submit"
-          disabled={searchingLocation}
+          disabled={searchingLocation || loading}
           style={{
             padding: '0.55rem 0.85rem',
             border: '1px solid #ccc',
@@ -461,7 +532,7 @@ export default function MapPage() {
             color: 'var(--foreground)',
           }}
         >
-          {searchingLocation ? 'Searching...' : 'Search'}
+          {searchingLocation || loading ? 'Searching...' : 'Search'}
         </button>
       </form>
 
@@ -493,14 +564,22 @@ export default function MapPage() {
           }}
         >
           {loading && <p style={{ marginTop: 0 }}>Loading gas stations from OpenStreetMap within {radiusMiles} miles...</p>}
-          {!loading && stations.length > 0 && <p style={{ marginTop: 0 }}>Showing {stations.length} gas stations within {radiusMiles} miles.</p>}
+          {!loading && stations.length > 0 && <p style={{ marginTop: 0 }}>Showing {stations.length} gas stations within {radiusMiles} miles (sorted by cheapest regular).</p>}
           {!loading && stations.length === 0 && <p style={{ marginTop: 0 }}>No stations found.</p>}
           <ul style={{ paddingLeft: '1rem', marginBottom: 0 }}>
             {stations.map((s, i) => {
               // Display address in sidebar - prefer place_name, fallback to geocoded_address
               const displayAddress = s.place_name ? s.place_name : s.geocoded_address;
               return (
-                <li key={s.id || s.properties?.id || i} style={{ marginBottom: '0.75rem' }}>
+                <li
+                  key={s.id || i}
+                  style={{
+                    marginBottom: '0.75rem',
+                    border: s.isCheapest ? '1px solid #16a34a' : '1px solid transparent',
+                    borderRadius: 8,
+                    background: s.isCheapest ? 'rgba(22, 163, 74, 0.08)' : 'transparent',
+                  }}
+                >
                   <button
                     type="button"
                     onClick={() => onStationClick(s, i)}
@@ -513,8 +592,14 @@ export default function MapPage() {
                       padding: '0.35rem 0.4rem',
                     }}
                   >
-                    <strong>{s.text}</strong>
+                    <strong>
+                      {s.text}
+                      {s.isCheapest ? ' (Cheapest)' : ''}
+                    </strong>
                     {displayAddress && <div style={{ opacity: 0.85, fontSize: '0.85rem' }}>{displayAddress}</div>}
+                    <div style={{ opacity: 0.9, fontSize: '0.85rem' }}>
+                      Regular ${s.fuelPrices.regular.toFixed(2)} · Mid ${s.fuelPrices.midGrade.toFixed(2)} · Premium ${s.fuelPrices.premium.toFixed(2)} · Diesel ${s.fuelPrices.diesel.toFixed(2)}
+                    </div>
                   </button>
                 </li>
               );
