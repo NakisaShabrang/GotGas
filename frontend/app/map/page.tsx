@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-const DEFAULT_SEARCH_RADIUS_MILES = 40;
+const DEFAULT_SEARCH_RADIUS_MILES = 10;
 
 function milesToKilometers(miles: number) {
   return miles * 1.609344;
