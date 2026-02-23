@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { addFavorite, FavoriteStation, loadFavorites, removeFavorite } from '@/app/lib/favorites';
 
 const DEFAULT_SEARCH_RADIUS_MILES = 10;
 
@@ -138,7 +139,7 @@ function getAvailableFuelTypes(tags: Record<string, string> | undefined) {
     .map(([key]) => titleCase(key.replace('fuel:', '')));
 }
 
-function buildStationPopupHtml(station: StationFeature, centerLat: number, centerLng: number) {
+function buildStationPopupHtml(station: StationFeature, centerLat: number, centerLng: number, isFavorite: boolean) {
   const tags = station?.properties?.tags as Record<string, string> | undefined;
   const name = station?.text || tags?.name || tags?.brand || 'Gas Station';
   const operator = tags?.operator;
@@ -158,6 +159,15 @@ function buildStationPopupHtml(station: StationFeature, centerLat: number, cente
   }
 
   const details = [
+    `<div style="margin-bottom:8px;">
+      <button
+        type="button"
+        data-favorite-id="${escapeHtml(station.id)}"
+        style="border:1px solid #d1d5db;border-radius:8px;padding:4px 8px;background:${isFavorite ? '#14532d' : '#ffffff'};color:${isFavorite ? '#ffffff' : '#111111'};cursor:pointer;font-weight:600;"
+      >
+        ${isFavorite ? '★ Saved' : '☆ Save'}
+      </button>
+    </div>`,
     station.isCheapest
       ? '<div style="margin-bottom:6px;"><strong style="color:#0f766e;">Cheapest in this list</strong></div>'
       : '',
@@ -183,6 +193,8 @@ function buildStationPopupHtml(station: StationFeature, centerLat: number, cente
 
 export default function MapPage() {
   const [stations, setStations] = useState<StationFeature[]>([]);
+  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
+  const [savedFavorites, setSavedFavorites] = useState<FavoriteStation[]>([]);
   const [loading, setLoading] = useState(false);
   const [locationQuery, setLocationQuery] = useState('');
   const [radiusMiles, setRadiusMiles] = useState(DEFAULT_SEARCH_RADIUS_MILES);
@@ -195,8 +207,20 @@ export default function MapPage() {
   const selectedLocationMarkerRef = useRef<any>(null);
   const radiusMilesRef = useRef(DEFAULT_SEARCH_RADIUS_MILES);
   const currentCenterRef = useRef<{ lat: number; lng: number } | null>(null);
+  const favoriteIdsRef = useRef<Set<string>>(new Set());
   const refreshStationsRef = useRef<(lat: number, lng: number) => Promise<void>>(async () => {});
   const searchLocationRef = useRef<(query: string) => Promise<void>>(async () => {});
+
+  useEffect(() => {
+    const favorites = loadFavorites();
+    const ids = new Set(favorites.map((favorite) => favorite.id));
+    setFavoriteIds(ids);
+    setSavedFavorites(favorites);
+  }, []);
+
+  useEffect(() => {
+    favoriteIdsRef.current = favoriteIds;
+  }, [favoriteIds]);
 
   useEffect(() => {
     radiusMilesRef.current = radiusMiles;
@@ -322,12 +346,48 @@ export default function MapPage() {
             const coords = f?.geometry?.coordinates;
             if (!coords || coords.length < 2) return;
             const [lng2, lat2] = coords;
+            const popup = new mapboxRef.current.Popup({ offset: 8 }).setHTML(
+              buildStationPopupHtml(f, lat, lng, favoriteIdsRef.current.has(f.id))
+            );
+
+            popup.on('open', () => {
+              const popupElement = popup.getElement();
+              const button = popupElement?.querySelector(`[data-favorite-id="${f.id}"]`) as HTMLButtonElement | null;
+              if (!button) return;
+
+              button.onclick = () => {
+                const currentlyFavorite = favoriteIdsRef.current.has(f.id);
+
+                if (currentlyFavorite) {
+                  const updated = removeFavorite(f.id);
+                  const nextIds = new Set(updated.map((favorite) => favorite.id));
+                  setFavoriteIds(nextIds);
+                  setSavedFavorites(updated);
+                  button.textContent = '☆ Save';
+                  button.style.background = '#ffffff';
+                  button.style.color = '#111111';
+                } else {
+                  const updated = addFavorite({
+                    id: f.id,
+                    name: f.text,
+                    address: f.place_name || f.geocoded_address,
+                  });
+                  const nextIds = new Set(updated.map((favorite) => favorite.id));
+                  setFavoriteIds(nextIds);
+                  setSavedFavorites(updated);
+                  button.textContent = '★ Saved';
+                  button.style.background = '#14532d';
+                  button.style.color = '#ffffff';
+                }
+              };
+            });
+
             const marker = new mapboxRef.current.Marker({
               color: f.isCheapest ? '#16a34a' : '#e53935',
               scale: f.isCheapest ? 1.45 : 1,
             })
               .setLngLat([lng2, lat2])
-              .setPopup(new mapboxRef.current.Popup({ offset: 8 }).setHTML(buildStationPopupHtml(f, lat, lng)))
+              .setPopup(popup)
               .addTo(mapInstanceRef.current);
             stationMarkersRef.current.push(marker);
 
@@ -563,6 +623,32 @@ export default function MapPage() {
             padding: '0.75rem',
           }}
         >
+          <div
+            style={{
+              marginBottom: '0.85rem',
+              border: '1px solid #facc15',
+              background: '#fef9c3',
+              borderRadius: 10,
+              padding: '0.6rem 0.65rem',
+            }}
+          >
+            <p style={{ marginTop: 0, marginBottom: '0.4rem', color: '#854d0e', fontWeight: 700 }}>
+              ★ Saved Favorites ({savedFavorites.length})
+            </p>
+            {savedFavorites.length === 0 && (
+              <p style={{ margin: 0, color: '#854d0e', fontSize: '0.85rem' }}>No favorites saved yet.</p>
+            )}
+            {savedFavorites.length > 0 && (
+              <ul style={{ margin: 0, paddingLeft: '1rem', color: '#854d0e' }}>
+                {savedFavorites.slice(0, 5).map((favorite) => (
+                  <li key={favorite.id} style={{ marginBottom: '0.35rem' }}>
+                    <div style={{ fontSize: '0.83rem', fontWeight: 600 }}>{favorite.name}</div>
+                    {favorite.address && <div style={{ fontSize: '0.78rem', opacity: 0.9 }}>{favorite.address}</div>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
           {loading && <p style={{ marginTop: 0 }}>Loading gas stations from OpenStreetMap within {radiusMiles} miles...</p>}
           {!loading && stations.length > 0 && <p style={{ marginTop: 0 }}>Showing {stations.length} gas stations within {radiusMiles} miles (sorted by cheapest regular).</p>}
           {!loading && stations.length === 0 && <p style={{ marginTop: 0 }}>No stations found.</p>}

@@ -6,11 +6,34 @@ export type FavoriteStation = {
 };
 
 const KEY = "gotgas:favorites";
+const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;
+
+function getCookie(name: string) {
+  if (typeof document === "undefined") return null;
+
+  const encodedName = `${encodeURIComponent(name)}=`;
+  const cookies = document.cookie ? document.cookie.split(";") : [];
+
+  for (const chunk of cookies) {
+    const cookie = chunk.trim();
+    if (cookie.startsWith(encodedName)) {
+      return decodeURIComponent(cookie.slice(encodedName.length));
+    }
+  }
+
+  return null;
+}
+
+function setCookie(name: string, value: string) {
+  if (typeof document === "undefined") return;
+
+  document.cookie = `${encodeURIComponent(name)}=${encodeURIComponent(value)}; path=/; max-age=${ONE_YEAR_SECONDS}; SameSite=Lax`;
+}
 
 export function loadFavorites(): FavoriteStation[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = getCookie(KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
@@ -20,7 +43,7 @@ export function loadFavorites(): FavoriteStation[] {
 }
 
 export function saveFavorites(favs: FavoriteStation[]) {
-  localStorage.setItem(KEY, JSON.stringify(favs));
+  setCookie(KEY, JSON.stringify(favs));
 }
 
 export function addFavorite(station: Omit<FavoriteStation, "createdAt">) {
