@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { addFavorite, FavoriteStation, loadFavorites, removeFavorite } from '@/app/lib/favorites';
 
-const DEFAULT_SEARCH_RADIUS_MILES = 10;
+const DEFAULT_SEARCH_RADIUS_MILES = 5;
 
 type FuelPrices = {
   regular: number;
