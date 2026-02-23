@@ -4,9 +4,14 @@
 **Setup Backend:**
 Install deps and freeze:
     cd backend
+make a new file in backend labeld .env, and then copy and paste this:
+MONGODB_URI=mongodb+srv://ion:Tlohnai1!@gotgas.4nrolis.mongodb.net/?retryWrites=true&w=majority
+SECRET_KEY=secret
+    then:
     source venv/bin/activate
     pip install flask mysql-connector-python
     pip freeze > requirements.txt
+
 Run server:
 python app.py
 
