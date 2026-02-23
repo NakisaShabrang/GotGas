@@ -66,8 +66,7 @@ export default function LoginPage() {
         </form>
         {message && <p className={messageType}>{message}</p>}
         <div className="hint">
-          <p>Try: admin / password123</p>
-          <p>Or: user / pass</p>
+          <p> Do you have an account? <Link href="/register">Register here</Link></p>
         </div>
       </div>
     </div>
