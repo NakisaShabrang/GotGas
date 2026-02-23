@@ -6,35 +6,30 @@ import os
 from dotenv import load_dotenv
 from datetime import timedelta
 
-# Load environment variables
-load_dotenv()  
+load_dotenv() #environment variables 
+
 app = Flask(__name__)
-CORS(app, supports_credentials=True, origins=["http://localhost:3000"])
-
-app.secret_key = os.getenv('SECRET_KEY', 'secret')
-app.config['SESSION_COOKIE_SAMESITE'] = 'None'
+CORS(app, supports_credentials=True)
+app.secret_key = os.getenv("SECRET_KEY", 'SECRET')
 app.config['SESSION_COOKIE_SECURE'] = True
-app.permanent_session_lifetime = timedelta(days=7)
+app.config['SESSION_COOKIE_SAMESITE'] = 'None'
+app.permanent_session_lifetime = timedelta(days=3)
 
-# MongoDB connection - IMPORTANT: Remove the default fallback
-MONGODB_URI = os.getenv('MONGODB_URI')
-print(f"Connecting to: {MONGODB_URI}")  # Debug
-client = MongoClient(MONGODB_URI)
-db = client['gotgas']
-users_collection = db['users']
+# mongoDB setup
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
+client = MongoClient(MONGO_URI)
+db = client["gotgas"]
+users_collection = db["users"]
 
-# Create index on username for faster lookups, not necessary but I like it
-users_collection.create_index('username', unique=True)
+users_collection.create_index("username", unique=True)
+
 
 @app.route("/")
 def home():
     return jsonify({"message": "Backend is running!"})
 
-@app.route("/register", methods=["POST", "OPTIONS"])
+@app.route("/register", methods=["POST"])
 def register():
-    if request.method == "OPTIONS":
-        return jsonify({}), 200
-    
     data = request.get_json()
     username = data.get("username")
     password = data.get("password")
@@ -43,7 +38,7 @@ def register():
         return jsonify({"error": "Username and password are required"}), 400
 
     if len(password) < 6:
-        return jsonify({"error": "Password must be at least 6 characters long"}), 400
+        return jsonify({"error": "Password must be at least 6 characters long"}), 400  #just to give some criteria
     
     if users_collection.find_one({"username": username}):
         return jsonify({"error": "Username already exists"}), 400
@@ -55,7 +50,6 @@ def register():
         "password": hashed_password,
         "created_at": None
     }
-    
     try: 
         users_collection.insert_one(user_doc)
         return jsonify({"message": "User registered successfully"}), 201
@@ -79,6 +73,7 @@ def login():
     if bcrypt.checkpw(password.encode('utf-8'), user["password"]):
         session.permanent = True
         session["user"] = username
+        logged_in_user = username
         return jsonify({"message": "Login successful", "username": username}), 200
     
     return jsonify({"error": "Invalid username or password"}), 401
@@ -94,8 +89,7 @@ def button_action():
         return jsonify({"error": "Please Log-in"}), 401
     
     print(f"Button clicked by {session['user']}!")
-    return jsonify({"message": "Button action executed successfully", "user": session['user']}), 200
-
+    return jsonify({"message": "Button action executed successfully", "user": session ['user']}), 200
 @app.route("/check-auth", methods=["GET"])
 def check_auth():
     if 'user' in session:
@@ -106,11 +100,7 @@ def check_auth():
 def user_info():
     if 'user' not in session:
         return jsonify({"error": "Please log in first"}), 401
-    
-    user = users_collection.find_one(
-        {"username": session['user']}, 
-        {"password": 0}  # Fixed: I needed quotes around "password"
-    )
+    user = users_collection.find_one({"username": session['user']}, {password: 0})
 
     if user:
         user['_id'] = str(user['_id'])
@@ -119,4 +109,4 @@ def user_info():
     return jsonify({"error": "User not found"}), 404
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(debug=True)

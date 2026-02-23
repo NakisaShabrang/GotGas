@@ -1,0 +1,61 @@
+import type { Metadata } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
+import "./globals.css";
+import Link from "next/link";
+
+const geistSans = Geist({
+  variable: "--font-geist-sans",
+  subsets: ["latin"],
+});
+
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
+
+export const metadata: Metadata = {
+  title: "GotGas - Find the Cheapest Gas Stations Near You",
+  description: "Locate the most affordable gas stations in your area with GotGas.",
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html lang="en">
+      <body
+        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+      >
+        {/* Top Navigation */}
+        <header
+          style={{
+            borderBottom: "1px solid rgba(0,0,0,0.1)",
+            padding: "16px",
+          }}
+        >
+          <nav
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "20px",
+              maxWidth: "1200px",
+              margin: "0 auto",
+            }}
+          >
+            <strong style={{ fontSize: "18px" }}>GotGas</strong>
+            <Link href="/">Home</Link>
+            <Link href="/map">Map</Link>
+            <Link href="/favorites">Favorites</Link>
+            <Link href="/login">Login</Link>
+          </nav>
+        </header>
+
+        {/* Page Content */}
+        <main style={{ maxWidth: "1200px", margin: "0 auto", padding: "20px" }}></main>
+        {children}
+      </body>
+    </html>
+  );
+}
