@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import './login.css';
+import Link from 'next/dist/client/link';
+import link from 'next/link';
 
 const API_URL = 'http://127.0.0.1:5000';
 
@@ -23,6 +25,7 @@ export default function LoginPage() {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({ username, password }),
       });
 
