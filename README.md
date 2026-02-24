@@ -1,7 +1,7 @@
 # GotGas
+**Mac:**
 
-**Setup Backend:**
-    **Mac:**
+   **Setup Backend:**
     cd backend
     make a new file in backend named .env, and then copy and paste this:
 
@@ -29,7 +29,7 @@
     pip install -r requirements.txt
     python app.py
 
-**Setup Frontend:**
+**Setup Frontend (Windows + Mac):**
 Make a new file named .env in frontend directory, and paste this inside:
 
 NEXT_PUBLIC_MAPBOX_TOKEN=pk.eyJ1Ijoia2FybG1hayIsImEiOiJjbWx2bDZ5NnEwOThhM25wb2d3MWpheHBmIn0.xTpEVDfvxodzZ-_bBuSoSQ
