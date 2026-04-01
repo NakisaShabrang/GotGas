@@ -34,19 +34,19 @@
   }
 }
 
-h1 {
+.register-box h1 {
   text-align: center;
   color: #054425;
   margin-bottom: 30px;
   font-size: 28px;
 }
 
-form {
+.register-box form {
   display: flex;
   flex-direction: column;
 }
 
-input {
+.register-box input {
   padding: 12px;
   margin-bottom: 15px;
   border: 2px solid #e0e0e0;
@@ -55,12 +55,12 @@ input {
   transition: border-color 0.3s;
 }
 
-input:focus {
+.register-box input:focus {
   outline: none;
   border-color: #054425;
 }
 
-button {
+.register-box button {
   padding: 12px;
   border: none;
   border-radius: 5px;

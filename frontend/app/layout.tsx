@@ -45,6 +45,7 @@ export default function RootLayout({
             }}
           >
             <strong style={{ fontSize: "18px" }}>GotGas</strong>
+            <Link href="/predictions">Predictions</Link>
             <Link href="/">Home</Link>
             <Link href="/map">Map</Link>
             <Link href="/favorites">Favorites</Link>
