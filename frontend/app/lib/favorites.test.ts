@@ -128,6 +128,13 @@ describe('favorites utility functions', () => {
       expect(result[0].name).toBe('New Name');
     });
 
+    it('trims and persists a commuter custom name', () => {
+      addFavorite({ id: 'station-1', name: 'Shell' });
+      const result = updateFavoriteName('station-1', '  Weekday Commute Stop  ');
+      expect(result[0].name).toBe('Weekday Commute Stop');
+      expect(loadFavorites()[0].name).toBe('Weekday Commute Stop');
+    });
+
     it('does not update if the new name is invalid (empty)', () => {
       addFavorite({ id: 'station-1', name: 'Shell' });
       const result = updateFavoriteName('station-1', '   ');
@@ -146,6 +153,13 @@ describe('favorites utility functions', () => {
       const result = updateFavoriteName('station-1', 'Updated Shell');
       const bp = result.find((f) => f.id === 'station-2');
       expect(bp?.name).toBe('BP');
+    });
+
+    it('leaves favorites unchanged when the station id does not exist', () => {
+      addFavorite({ id: 'station-1', name: 'Shell' });
+      const result = updateFavoriteName('missing-station', 'Updated Shell');
+      expect(result).toEqual(loadFavorites());
+      expect(result[0].name).toBe('Shell');
     });
   });
 });

@@ -89,6 +89,17 @@ describe("FavoritesClient rename flows", () => {
     expect(container.textContent).toContain("Weekday Commute Stop");
   });
 
+  it("trims a commuter custom name before saving", async () => {
+    await renderClient();
+
+    await clickButton("Edit");
+    await updateInputValue("  Weekday Commute Stop  ");
+    await clickButton("Confirm");
+
+    expect(loadFavorites()[0].name).toBe("Weekday Commute Stop");
+    expect(container.textContent).toContain("Weekday Commute Stop");
+  });
+
   it("shows inline validation when name is empty", async () => {
     await renderClient();
 
@@ -113,6 +124,24 @@ describe("FavoritesClient rename flows", () => {
       `Station name must be ${MAX_FAVORITE_NAME_LENGTH} characters or fewer.`
     );
     expect(loadFavorites()[0].name).toBe("Shell Downtown");
+  });
+
+  it("clears the validation message after the commuter fixes the name", async () => {
+    await renderClient();
+
+    await clickButton("Edit");
+    await updateInputValue("   ");
+    await clickButton("Confirm");
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+      "Please enter a valid station name."
+    );
+
+    await updateInputValue("Neighborhood Fill-Up");
+
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+
+    await clickButton("Confirm");
+    expect(loadFavorites()[0].name).toBe("Neighborhood Fill-Up");
   });
 
   it("cancels rename without saving", async () => {
