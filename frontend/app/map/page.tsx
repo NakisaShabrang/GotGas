@@ -5,11 +5,17 @@ import { addFavorite, FavoriteStation, loadFavorites, removeFavorite } from '@/a
 
 const DEFAULT_SEARCH_RADIUS_MILES = 5;
 
+
 type FuelPrices = {
   regular: number;
   midGrade: number;
   premium: number;
   diesel: number;
+};
+type Filters = {
+  stationBrand: string;
+  fuelType: string;
+  priceRange: {min: number; max: number };
 };
 
 type StationFeature = {
@@ -138,7 +144,47 @@ function getAvailableFuelTypes(tags: Record<string, string> | undefined) {
     .filter(([key, val]) => key.startsWith('fuel:') && ['yes', '1', 'true'].includes(val.toLowerCase()))
     .map(([key]) => titleCase(key.replace('fuel:', '')));
 }
+function extractUniqueBrands(stations: StationFeature[]) {
+  const brands = new Set<string>();
+  stations.forEach((station) => {
+    const brand= station.properties?.tags?.brand || station.properties?.tags?.operator;
+    if (brand) brands.add(brand);
+  });
+  return Array.from(brands).sort();
+}
+function extractUniqueFuelTypes(stations: StationFeature[]): string[] {
+  const fuelTypes = new Set<string>();
+  stations.forEach((station) => {
+    const types = getAvailableFuelTypes(station.properties?.tags);
+    types.forEach((type) => fuelTypes.add(type));
+  });
+  return Array.from(fuelTypes).sort();
+}
+function filterStations(stations: StationFeature[], filters: Filters): StationFeature[] {
+  return stations.filter((station) => {
+    const tags = station.properties?.tags;
+    const brand = tags?.brand || tags?.operator || '';
+    const fuelTypes = getAvailableFuelTypes(tags);
+    const regularPrice = station.fuelPrices.regular;
 
+    // Filter by brand
+    if (filters.stationBrand && filters.stationBrand !== 'all') {
+      if (brand !== filters.stationBrand) return false;
+    }
+
+    // Filter by fuel type
+    if (filters.fuelType && filters.fuelType !== 'all') {
+      if (!fuelTypes.includes(filters.fuelType)) return false;
+    }
+
+    // Filter by price range
+    if (regularPrice < filters.priceRange.min || regularPrice > filters.priceRange.max) {
+      return false;
+    }
+
+    return true;
+  });
+}
 function buildStationPopupHtml(station: StationFeature, centerLat: number, centerLng: number, isFavorite: boolean) {
   const tags = station?.properties?.tags as Record<string, string> | undefined;
   const name = station?.text || tags?.name || tags?.brand || 'Gas Station';
@@ -192,14 +238,18 @@ function buildStationPopupHtml(station: StationFeature, centerLat: number, cente
 }
 
 export default function MapPage() {
-  const [stations, setStations] = useState<StationFeature[]>([]);
-  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
+  const [allStations, setAllStations] = useState<StationFeature[]>([]);
+  const [filteredStations, setFilteredStations] = useState<StationFeature[]>([]);  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
   const [savedFavorites, setSavedFavorites] = useState<FavoriteStation[]>([]);
   const [loading, setLoading] = useState(false);
   const [locationQuery, setLocationQuery] = useState('');
   const [radiusMiles, setRadiusMiles] = useState(DEFAULT_SEARCH_RADIUS_MILES);
   const [searchError, setSearchError] = useState('');
   const [searchingLocation, setSearchingLocation] = useState(false);
+  const [filters, setFilters] = useState<Filters>({stationBrand: 'all', fuelType: 'all',priceRange: { min: MIN_FUEL_PRICE, max: MAX_FUEL_PRICE }, });
+  const [availableBrands, setAvailableBrands] = useState<string[]>([]);
+  const [availableFuelTypes, setAvailableFuelTypes] = useState<string[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<any>(null);
   const mapboxRef = useRef<any>(null);
@@ -217,6 +267,13 @@ export default function MapPage() {
     setFavoriteIds(ids);
     setSavedFavorites(favorites);
   }, []);
+    
+  useEffect(() => {
+  const filtered = filterStations(allStations, filters);
+  setFilteredStations(filtered);
+  setAvailableBrands(extractUniqueBrands(allStations));
+  setAvailableFuelTypes(extractUniqueFuelTypes(allStations));
+  }, [allStations, filters]);
 
   useEffect(() => {
     favoriteIdsRef.current = favoriteIds;
@@ -337,8 +394,7 @@ export default function MapPage() {
         stationMarkersRef.current.forEach((m) => m.remove());
         stationMarkersRef.current = [];
 
-        setStations(stationsWithPrices);
-
+        setAllStations(stationsWithPrices);
         // create markers and bounds
         if (mapInstanceRef.current && mapboxRef.current) {
           let bounds: any = null;
@@ -493,7 +549,75 @@ export default function MapPage() {
       mapInstanceRef.current?.remove();
     };
   }, []);
+    useEffect(() => {
+    if (!mapInstanceRef.current || !mapboxRef.current || !currentCenterRef.current) return;
 
+    // Remove old markers
+    stationMarkersRef.current.forEach((m) => m.remove());
+    stationMarkersRef.current = [];
+
+    const { lat, lng } = currentCenterRef.current;
+
+    // Create markers for filtered stations
+    let bounds: any = null;
+    filteredStations.forEach((f) => {
+      const coords = f?.geometry?.coordinates;
+      if (!coords || coords.length < 2) return;
+      const [lng2, lat2] = coords;
+      
+      const popup = new mapboxRef.current.Popup({ offset: 8 }).setHTML(
+        buildStationPopupHtml(f, lat, lng, favoriteIdsRef.current.has(f.id))
+      );
+
+      popup.on('open', () => {
+        const popupElement = popup.getElement();
+        const button = popupElement?.querySelector(`[data-favorite-id="${f.id}"]`) as HTMLButtonElement | null;
+        if (!button) return;
+
+        button.onclick = () => {
+          const currentlyFavorite = favoriteIdsRef.current.has(f.id);
+
+          if (currentlyFavorite) {
+            const updated = removeFavorite(f.id);
+            const nextIds = new Set(updated.map((favorite) => favorite.id));
+            setFavoriteIds(nextIds);
+            setSavedFavorites(updated);
+            button.textContent = '☆ Save';
+            button.style.background = '#ffffff';
+            button.style.color = '#111111';
+          } else {
+            const updated = addFavorite({
+              id: f.id,
+              name: f.text,
+              address: f.place_name || f.geocoded_address,
+            });
+            const nextIds = new Set(updated.map((favorite) => favorite.id));
+            setFavoriteIds(nextIds);
+            setSavedFavorites(updated);
+            button.textContent = '★ Saved';
+            button.style.background = '#14532d';
+            button.style.color = '#ffffff';
+          }
+        };
+      });
+
+      const marker = new mapboxRef.current.Marker({
+        color: f.isCheapest ? '#16a34a' : '#e53935',
+        scale: f.isCheapest ? 1.45 : 1,
+      })
+        .setLngLat([lng2, lat2])
+        .setPopup(popup)
+        .addTo(mapInstanceRef.current);
+      stationMarkersRef.current.push(marker);
+
+      if (!bounds) bounds = new mapboxRef.current.LngLatBounds([lng2, lat2], [lng2, lat2]);
+      bounds.extend([lng2, lat2]);
+    });
+
+    if (bounds && filteredStations.length > 0) {
+      mapInstanceRef.current.fitBounds(bounds, { padding: 50, maxZoom: 13 });
+    }
+  }, [filteredStations, favoriteIds]);
   const onSubmitLocation = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
@@ -528,6 +652,31 @@ export default function MapPage() {
     if (marker?.togglePopup) {
       marker.togglePopup();
     }
+  };
+    const onBrandChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setFilters((prev) => ({ ...prev, stationBrand: e.target.value }));
+  };
+
+  const onFuelTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setFilters((prev) => ({ ...prev, fuelType: e.target.value }));
+  };
+
+  const onPriceMinChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const min = Number(e.target.value);
+    setFilters((prev) => ({ ...prev, priceRange: { ...prev.priceRange, min } }));
+  };
+
+  const onPriceMaxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const max = Number(e.target.value);
+    setFilters((prev) => ({ ...prev, priceRange: { ...prev.priceRange, max } }));
+  };
+
+  const onClearFilters = () => {
+    setFilters({
+      stationBrand: 'all',
+      fuelType: 'all',
+      priceRange: { min: MIN_FUEL_PRICE, max: MAX_FUEL_PRICE },
+    });
   };
 
   return (
@@ -595,6 +744,151 @@ export default function MapPage() {
           {searchingLocation || loading ? 'Searching...' : 'Search'}
         </button>
       </form>
+            <div
+        style={{
+          marginBottom: '1rem',
+          padding: '0.75rem',
+          border: '1px solid #ccc',
+          borderRadius: 10,
+          backgroundColor: 'var(--background)',
+        }}
+      >
+        <div style={{ marginBottom: '1rem' }}>
+  <button
+    type="button"
+    onClick={() => setShowFilters((prev) => !prev)}
+    style={{
+      padding: '0.5rem 0.85rem',
+      border: '1px solid #ccc',
+      borderRadius: 8,
+      cursor: 'pointer',
+      backgroundColor: 'var(--background)',
+      color: 'var(--foreground)',
+      fontWeight: 500,
+      marginBottom: '0.5rem',
+    }}
+  >
+    {showFilters ? '▲ Hide Filters' : '▼ Show Filters'}
+  </button>
+
+  {showFilters && (
+    <div
+      style={{
+        padding: '0.75rem',
+        border: '1px solid #ccc',
+        borderRadius: 10,
+        backgroundColor: 'var(--background)',
+      }}
+    >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+          <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600 }}>Filters</h3>
+          <button
+            type="button"
+            onClick={onClearFilters}
+            style={{
+              padding: '0.25rem 0.5rem',
+              border: '1px solid #ccc',
+              borderRadius: 6,
+              fontSize: '0.85rem',
+              cursor: 'pointer',
+              backgroundColor: 'var(--background)',
+              color: 'var(--foreground)',
+            }}
+          >
+            Clear Filters
+          </button>
+        </div>
+        
+        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+          {/* Station Brand Filter */}
+          <div style={{ flex: '1 1 180px' }}>
+            <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: 500 }}>
+              Station Brand
+            </label>
+            <select
+              value={filters.stationBrand}
+              onChange={onBrandChange}
+              style={{
+                width: '100%',
+                padding: '0.45rem 0.55rem',
+                border: '1px solid #ccc',
+                borderRadius: 6,
+                backgroundColor: 'var(--background)',
+                color: 'var(--foreground)',
+              }}
+            >
+              <option value="all">All Brands</option>
+              {availableBrands.map((brand) => (
+                <option key={brand} value={brand}>
+                  {brand}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Fuel Type Filter */}
+          <div style={{ flex: '1 1 180px' }}>
+            <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: 500 }}>
+              Fuel Type
+            </label>
+            <select
+              value={filters.fuelType}
+              onChange={onFuelTypeChange}
+              style={{
+                width: '100%',
+                padding: '0.45rem 0.55rem',
+                border: '1px solid #ccc',
+                borderRadius: 6,
+                backgroundColor: 'var(--background)',
+                color: 'var(--foreground)',
+              }}
+            >
+              <option value="all">All Fuel Types</option>
+              {availableFuelTypes.map((fuelType) => (
+                <option key={fuelType} value={fuelType}>
+                  {fuelType}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Price Range Filter */}
+          <div style={{ flex: '1 1 280px' }}>
+            <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: 500 }}>
+              Regular Price Range: ${filters.priceRange.min.toFixed(2)} - ${filters.priceRange.max.toFixed(2)}
+            </label>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <input
+                type="range"
+                min={MIN_FUEL_PRICE}
+                max={MAX_FUEL_PRICE}
+                step={0.01}
+                value={filters.priceRange.min}
+                onChange={onPriceMinChange}
+                style={{ flex: 1 }}
+              />
+              <span style={{ fontSize: '0.8rem' }}>to</span>
+              <input
+                type="range"
+                min={MIN_FUEL_PRICE}
+                max={MAX_FUEL_PRICE}
+                step={0.01}
+                value={filters.priceRange.max}
+                onChange={onPriceMaxChange}
+                style={{ flex: 1 }}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+  )}
+</div>
+
+        {/* Filter Results Summary */}
+        <div style={{ marginTop: '0.5rem', fontSize: '0.85rem', color: '#666' }}>
+          Showing {filteredStations.length} of {allStations.length} stations
+        </div>
+      </div>
 
       {searchError && <p style={{ color: '#8b1a1a', marginTop: 0, marginBottom: '0.9rem' }}>{searchError}</p>}
 
@@ -650,10 +944,10 @@ export default function MapPage() {
             )}
           </div>
           {loading && <p style={{ marginTop: 0 }}>Loading gas stations from OpenStreetMap within {radiusMiles} miles...</p>}
-          {!loading && stations.length > 0 && <p style={{ marginTop: 0 }}>Showing {stations.length} gas stations within {radiusMiles} miles (sorted by cheapest regular).</p>}
-          {!loading && stations.length === 0 && <p style={{ marginTop: 0 }}>No stations found.</p>}
+          {!loading && filteredStations.length > 0 && <p style={{ marginTop: 0 }}>Showing {filteredStations.length} gas stations within {radiusMiles} miles (sorted by cheapest regular).</p>}
+          {!loading && filteredStations.length === 0 && <p style={{ marginTop: 0 }}>No stations found.</p>}
           <ul style={{ paddingLeft: '1rem', marginBottom: 0 }}>
-            {stations.map((s, i) => {
+            {filteredStations.map((s, i) => {
               // Display address in sidebar - prefer place_name, fallback to geocoded_address
               const displayAddress = s.place_name ? s.place_name : s.geocoded_address;
               return (
