@@ -249,14 +249,25 @@ export default function MapPage() {
 
         const overpassQuery = `[out:json][timeout:30][maxsize:536870912];(node["amenity"="fuel"](around:${radiusMeters},${lat},${lng});way["amenity"="fuel"](around:${radiusMeters},${lat},${lng});relation["amenity"="fuel"](around:${radiusMeters},${lat},${lng}););out center;`;
 
-        const res = await fetch('https://overpass-api.de/api/interpreter', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
-          body: `data=${encodeURIComponent(overpassQuery)}`,
-        });
-
-        const rawBody = await res.text();
-        if (!res.ok) throw new Error(`OpenStreetMap request failed with status ${res.status}.`);
+        let res: Response | undefined;
+        let rawBody = '';
+        const maxRetries = 3;
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+          try {
+            res = await fetch('https://overpass-api.de/api/interpreter', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+              body: `data=${encodeURIComponent(overpassQuery)}`,
+            });
+            rawBody = await res.text();
+            if (res.ok) break;
+          } catch (fetchErr) {
+            if (attempt === maxRetries - 1) throw fetchErr;
+          }
+          // Wait before retrying
+          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+        }
+        if (!res || !res.ok) throw new Error(`OpenStreetMap request failed with status ${res?.status ?? 'unknown'}.`);
 
         let data: any;
         try {
