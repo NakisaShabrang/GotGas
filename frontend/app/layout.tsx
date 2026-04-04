@@ -32,8 +32,8 @@ export default function RootLayout({
         {/* Top Navigation */}
         <header
           style={{
-            borderBottom: "1px solid rgba(0,0,0,0.1)",
-            padding: "16px",
+            backgroundColor: "#14532d",
+            padding: "0 16px",
           }}
         >
         <Navbar />
