@@ -242,6 +242,7 @@ export default function MapPage() {
   const [filteredStations, setFilteredStations] = useState<StationFeature[]>([]);  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
   const [savedFavorites, setSavedFavorites] = useState<FavoriteStation[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState('');
   const [locationQuery, setLocationQuery] = useState(() => {
     if (typeof window !== 'undefined') {
       return new URLSearchParams(window.location.search).get('location') || '';
@@ -262,6 +263,7 @@ export default function MapPage() {
   const selectedLocationMarkerRef = useRef<any>(null);
   const radiusMilesRef = useRef(DEFAULT_SEARCH_RADIUS_MILES);
   const currentCenterRef = useRef<{ lat: number; lng: number } | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const favoriteIdsRef = useRef<Set<string>>(new Set());
   const refreshStationsRef = useRef<(lat: number, lng: number) => Promise<void>>(async () => {});
   const searchLocationRef = useRef<(query: string) => Promise<void>>(async () => {});
@@ -303,33 +305,55 @@ export default function MapPage() {
     }
 
     const fetchPlaces = async (lat: number, lng: number) => {
+      // Cancel any in-flight request
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
+      // Clear previous results immediately
+      stationMarkersRef.current.forEach((m) => m.remove());
+      stationMarkersRef.current = [];
+      setAllStations([]);
+
       setLoading(true);
+      setLoadingMessage('Searching for gas stations...');
       setSearchError('');
       try {
         const selectedRadiusMiles = radiusMilesRef.current;
-        const radiusMeters = milesToMeters(selectedRadiusMiles);
 
-        const overpassQuery = `[out:json][timeout:15];(node["amenity"="fuel"](around:${radiusMeters},${lat},${lng});way["amenity"="fuel"](around:${radiusMeters},${lat},${lng}););out center;`;
+        // Use bounding box query — much faster than "around" on Overpass
+        const bbox = getBoundingBox(lat, lng, selectedRadiusMiles);
+        const overpassQuery = `[out:json][timeout:10];(node["amenity"="fuel"](${bbox.minLat},${bbox.minLng},${bbox.maxLat},${bbox.maxLng});way["amenity"="fuel"](${bbox.minLat},${bbox.minLng},${bbox.maxLat},${bbox.maxLng}););out center;`;
 
         let res: Response | undefined;
         let rawBody = '';
-        const maxRetries = 5;
+        const maxRetries = 3;
         for (let attempt = 0; attempt < maxRetries; attempt++) {
+          if (controller.signal.aborted) return;
+          if (attempt > 0) {
+            setLoadingMessage(`Retrying... (attempt ${attempt + 1} of ${maxRetries})`);
+          }
           try {
             res = await fetch('https://overpass-api.de/api/interpreter', {
               method: 'POST',
               headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
               body: `data=${encodeURIComponent(overpassQuery)}`,
+              signal: controller.signal,
             });
             rawBody = await res.text();
             if (res.ok) break;
-          } catch (fetchErr) {
+          } catch (fetchErr: any) {
+            if (fetchErr?.name === 'AbortError') return;
             if (attempt === maxRetries - 1) throw fetchErr;
           }
-          // Wait before retrying (2s, 4s, 6s, 8s)
-          await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+          await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
         }
+        if (controller.signal.aborted) return;
         if (!res || !res.ok) throw new Error(`OpenStreetMap request failed with status ${res?.status ?? 'unknown'}.`);
+
+        setLoadingMessage('Processing results...');
 
         let data: any;
         try {
@@ -374,17 +398,15 @@ export default function MapPage() {
           return distanceMiles(lat, lng, fLat, fLng) <= selectedRadiusMiles;
         });
 
+        setLoadingMessage(`Found ${inRadiusFeatures.length} stations. Calculating prices...`);
+
         const stationsWithPrices: StationFeature[] = inRadiusFeatures
           .map((feature) => ({ ...feature, fuelPrices: generateFuelPrices() }))
           .sort((a, b) => a.fuelPrices.regular - b.fuelPrices.regular)
           .map((station, index) => ({ ...station, isCheapest: index === 0 }));
 
-        // remove old markers
-        stationMarkersRef.current.forEach((m) => m.remove());
-        stationMarkersRef.current = [];
-
+        setLoadingMessage('Placing markers on map...');
         setAllStations(stationsWithPrices);
-        // create markers and bounds
         if (mapInstanceRef.current && mapboxRef.current) {
           let bounds: any = null;
           stationsWithPrices.forEach((f) => {
@@ -450,6 +472,7 @@ export default function MapPage() {
         setSearchError('OpenStreetMap is temporarily unavailable. Please try again in a moment.');
       } finally {
         setLoading(false);
+        setLoadingMessage('');
       }
     };
 
@@ -469,6 +492,12 @@ export default function MapPage() {
 
       setSearchingLocation(true);
       setSearchError('');
+      setLoadingMessage('Looking up location...');
+
+      // Clear old results immediately so it feels like a fresh search
+      stationMarkersRef.current.forEach((m) => m.remove());
+      stationMarkersRef.current = [];
+      setAllStations([]);
 
       try {
         const geocodeUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(trimmed)}.json?limit=1&autocomplete=true&types=address,postcode,place,locality,neighborhood&access_token=${token}`;
@@ -531,7 +560,10 @@ export default function MapPage() {
       }
     };
 
-    if (navigator.geolocation) {
+    if (locationParam) {
+      // Skip geolocation when we have a search location — use default center just to init the map
+      initAndSearch(35.311795, -80.741203);
+    } else if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => initAndSearch(pos.coords.latitude, pos.coords.longitude),
         () => initAndSearch(35.311795, -80.741203),
@@ -942,7 +974,7 @@ export default function MapPage() {
               </ul>
             )}
           </div>
-          {loading && <p style={{ marginTop: 0 }}>Loading gas stations from OpenStreetMap within {radiusMiles} miles...</p>}
+          {loading && <p style={{ marginTop: 0 }}>{loadingMessage || 'Loading...'}</p>}
           {!loading && filteredStations.length > 0 && <p style={{ marginTop: 0 }}>Showing {filteredStations.length} gas stations within {radiusMiles} miles (sorted by cheapest regular).</p>}
           {!loading && filteredStations.length === 0 && <p style={{ marginTop: 0 }}>No stations found.</p>}
           <ul style={{ paddingLeft: '1rem', marginBottom: 0 }}>
