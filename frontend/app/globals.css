@@ -16,8 +16,8 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #1a2332;
+    --foreground: #e8ecf1;
   }
 }
 
@@ -25,4 +25,46 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+.nav-link {
+  color: #d1fae5;
+  text-decoration: none;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 0.95rem;
+}
+
+.nav-link:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.nav-login {
+  color: #ffffff;
+  text-decoration: none;
+  padding: 6px 18px;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  background-color: rgba(255, 255, 255, 0.2);
+  font-weight: 600;
+  margin-left: 8px;
+}
+
+.nav-login:hover {
+  background-color: rgba(255, 255, 255, 0.3);
+}
+
+.home-cta-btn {
+  padding: 12px 24px;
+  font-size: 16px;
+  font-weight: bold;
+  background-color: #14532d;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.home-cta-btn:hover {
+  background-color: #166534;
 }

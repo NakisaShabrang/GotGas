@@ -1,11 +1,16 @@
 # Python
 backend/venv/
+backend/.venv/
 venv/
+.venv/
 __pycache__/
 
 # Node
 node_modules/
 .next/
+
+# Test results
+frontend/test-results/
 
 # Env files
 .env

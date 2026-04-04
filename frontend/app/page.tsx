@@ -3,161 +3,175 @@
 import Link from 'next/link'
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import AddToFavoritesButton from "./components/AddToFavoritesButton";
 
 export default function Home() {
   const [location, setLocation] = useState('');
-  const [searchTerm, setSearchTerm] = useState('');
+  const [faqOpen, setFaqOpen] = useState<number | null>(null);
   const router = useRouter();
 
-  const handleTryFeature = (e: React.FormEvent) => {
+  const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    // Redirect to map with search parameters
-    const params = new URLSearchParams();
-    if (location) params.append('location', location);
-    if (searchTerm) params.append('search', searchTerm);
-    router.push(`/map?${params.toString()}`);
+    if (location.trim()) {
+      router.push(`/map?location=${encodeURIComponent(location.trim())}`);
+    } else {
+      router.push('/map');
+    }
   };
 
+  const faqs = [
+    { q: 'How are gas prices determined?', a: 'Gas prices are influenced by crude oil costs, refining expenses, distribution, marketing, and federal/state taxes. Crude oil alone accounts for about 50% of the price at the pump.' },
+    { q: 'How accurate are the price predictions?', a: 'Predictions use linear regression on historical weekly data. The confidence indicator shows how consistent the trend has been — higher confidence means the data fits a steady pattern.' },
+    { q: 'Can I save my favorite gas stations?', a: 'Yes. Click the Save button on any station in the map view, and it will appear on your Favorites page for quick access.' },
+    { q: 'What areas does GotGas cover?', a: 'GotGas uses OpenStreetMap data, so it covers gas stations across the entire United States. You can search by address, city, or zip code.' },
+    { q: 'Why is data unavailable for some states in predictions?', a: 'The prediction feature currently uses mock historical data for a subset of states. States without data will show a message indicating the data is not yet available.' },
+  ];
+
   return (
-    <div style={{ padding: '40px 20px' }}>
-      {/* Hero Section */}
-      <section style={{
+    <div style={{ padding: '40px 20px', maxWidth: 900, margin: '0 auto' }}>
+      {/* Title */}
+      <h1 style={{ textAlign: 'center', fontSize: '32px', marginBottom: '40px' }}>
+        Welcome to GotGas
+      </h1>
+
+      {/* Search */}
+      <form onSubmit={handleSearch} style={{
+        display: 'flex',
+        gap: '10px',
+        maxWidth: 600,
+        margin: '0 auto 48px',
+      }}>
+        <input
+          type="text"
+          placeholder="Enter address, city, or zip code (e.g., 27262)"
+          value={location}
+          onChange={(e) => setLocation(e.target.value)}
+          style={{
+            flex: 1,
+            padding: '12px 16px',
+            fontSize: '16px',
+            border: '1px solid rgba(128,128,128,0.3)',
+            borderRadius: '8px',
+            fontFamily: 'inherit',
+            backgroundColor: 'var(--background)',
+            color: 'var(--foreground)',
+          }}
+        />
+        <button type="submit" className="home-cta-btn" style={{ minWidth: 100 }}>
+          Search
+        </button>
+      </form>
+
+      {/* How the site works */}
+      <h2 style={{ fontSize: '20px', marginBottom: '16px' }}>How the site works</h2>
+
+      <div style={{
+        border: '1px solid rgba(128,128,128,0.3)',
+        borderRadius: '10px',
+        padding: '28px 32px',
+        marginBottom: '48px',
+        lineHeight: 1.8,
+        fontSize: '0.95rem',
+        opacity: 0.85,
+      }}>
+        <p style={{ marginTop: 0, marginBottom: '16px' }}>
+          GotGas helps you find the cheapest gas stations near any location. Use the search bar above or visit the{' '}
+          <Link href="/map" style={{ color: '#16a34a', textDecoration: 'underline' }}>Map</Link> page to browse stations
+          sorted by price. You can adjust the search radius and view details like fuel prices, address, and hours for each station.
+        </p>
+        <p style={{ marginTop: 0, marginBottom: '16px' }}>
+          Save stations you visit often by clicking the <strong>Save</strong> button, then view them anytime on the{' '}
+          <Link href="/favorites" style={{ color: '#16a34a', textDecoration: 'underline' }}>Favorites</Link> page.
+          Create a <Link href="/login" style={{ color: '#16a34a', textDecoration: 'underline' }}>profile</Link> to
+          keep your preferences and favorites saved across sessions.
+        </p>
+        <p style={{ margin: 0 }}>
+          The <Link href="/predictions" style={{ color: '#16a34a', textDecoration: 'underline' }}>Predictions</Link> page
+          shows historical gas price trends for each state over the past 8 weeks, along with a predicted price for next week.
+          A confidence indicator tells you how reliable the prediction is based on how consistent the trend has been.
+        </p>
+      </div>
+
+      {/* Links to news */}
+      <div style={{
+        border: '1px solid rgba(128,128,128,0.3)',
+        borderRadius: '10px',
+        padding: '28px 32px',
+        marginBottom: '48px',
         textAlign: 'center',
-        marginBottom: '60px',
-        paddingBottom: '40px',
-        borderBottom: '1px solid rgba(0,0,0,0.1)'
       }}>
-        <h1 style={{ fontSize: '48px', marginBottom: '16px' }}>Welcome to GotGas</h1>
-        <p style={{ fontSize: '20px', color: '#666', marginBottom: '24px' }}>
-          Find the cheapest gas stations near you in seconds
+        <p style={{ marginTop: 0, marginBottom: '20px', opacity: 0.7, fontSize: '0.95rem' }}>
+          Links to news about gas prices and possible reasons as to why prices are the way they are.
         </p>
-        <p style={{ fontSize: '16px', color: '#888', maxWidth: '600px', margin: '0 auto' }}>
-          GotGas helps you save money on gas by showing you the most affordable gas stations in your area. 
-          Stop wasting time and money—start finding better prices today.
-        </p>
-      </section>
-
-      {/* Features Section */}
-      <section style={{ marginBottom: '60px' }}>
-        <h2 style={{ fontSize: '32px', marginBottom: '32px', textAlign: 'center' }}>How It Works</h2>
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-          gap: '30px'
-        }}>
-          {/* Feature 1 */}
-          <div style={{
-            padding: '24px',
-            border: '1px solid rgba(0,0,0,0.1)',
-            borderRadius: '8px',
-            backgroundColor: '#f9f9f9'
-          }}>
-            <h3 style={{ fontSize: '20px', marginBottom: '12px' }}>📍 Search by Location</h3>
-            <p style={{ color: '#666', lineHeight: '1.6' }}>
-              Enter your location or let us use your current position to find gas stations nearby instantly.
-            </p>
-          </div>
-
-          {/* Feature 2 */}
-          <div style={{
-            padding: '24px',
-            border: '1px solid rgba(0,0,0,0.1)',
-            borderRadius: '8px',
-            backgroundColor: '#f9f9f9'
-          }}>
-            <h3 style={{ fontSize: '20px', marginBottom: '12px' }}>💰 Compare Prices</h3>
-            <p style={{ color: '#666', lineHeight: '1.6' }}>
-              See real-time gas prices from hundreds of stations and identify the best deals in your area.
-            </p>
-          </div>
-
-          {/* Feature 3 */}
-          <div style={{
-            padding: '24px',
-            border: '1px solid rgba(0,0,0,0.1)',
-            borderRadius: '8px',
-            backgroundColor: '#f9f9f9'
-          }}>
-            <h3 style={{ fontSize: '20px', marginBottom: '12px' }}>⭐ Save Favorites</h3>
-            <p style={{ color: '#666', lineHeight: '1.6' }}>
-              Bookmark your favorite gas stations and keep track of their prices to save the most money.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* Call-to-Action Section */}
-      <section style={{
-        backgroundColor: '#f0f0f0',
-        padding: '48px',
-        borderRadius: '12px',
-        textAlign: 'center'
-      }}>
-        <h2 style={{ fontSize: '32px', marginBottom: '24px' }}>Try It Now</h2>
-        <p style={{ fontSize: '16px', color: '#666', marginBottom: '32px' }}>
-          Enter your location and start finding the cheapest gas stations near you
-        </p>
-
-        <form onSubmit={handleTryFeature} style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '16px',
-          maxWidth: '500px',
-          margin: '0 auto'
-        }}>
-          <input
-            type="text"
-            placeholder="Enter your location (e.g., New York, NY)"
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-            style={{
-              padding: '12px 16px',
-              fontSize: '16px',
-              border: '1px solid #ccc',
-              borderRadius: '6px',
-              fontFamily: 'inherit'
-            }}
-          />
-
-          <input
-            type="text"
-            placeholder="Optional: Gas type or station name (e.g., Shell, Premium)"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={{
-              padding: '12px 16px',
-              fontSize: '16px',
-              border: '1px solid #ccc',
-              borderRadius: '6px',
-              fontFamily: 'inherit'
-            }}
-          />
-
-          <button
-            type="submit"
-            style={{
-              padding: '12px 24px',
-              fontSize: '16px',
-              fontWeight: 'bold',
-              backgroundColor: '#333',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              transition: 'background-color 0.3s'
-            }}
-            onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#555'}
-            onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#333'}
+        <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+          <a
+            href="https://www.eia.gov/energyexplained/gasoline/factors-affecting-gasoline-prices.php"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="home-cta-btn"
+            style={{ textDecoration: 'none', fontSize: '14px', padding: '10px 20px' }}
           >
-            Find Cheap Gas →
-          </button>
-        </form>
+            How Gas Prices Work
+          </a>
+          <a
+            href="https://www.eia.gov/petroleum/gasdiesel/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="home-cta-btn"
+            style={{ textDecoration: 'none', fontSize: '14px', padding: '10px 20px' }}
+          >
+            Weekly Price Reports
+          </a>
+          <a
+            href="https://gasprices.aaa.com/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="home-cta-btn"
+            style={{ textDecoration: 'none', fontSize: '14px', padding: '10px 20px' }}
+          >
+            AAA Gas Prices
+          </a>
+        </div>
+      </div>
 
-        <p style={{ fontSize: '14px', color: '#888', marginTop: '20px' }}>
-          Or go to <Link href="/map" style={{ color: '#333', textDecoration: 'underline' }}>Map</Link> to start exploring
-        </p>
-      </section>
+      {/* FAQs */}
+      <div style={{
+        border: '1px solid rgba(128,128,128,0.3)',
+        borderRadius: '10px',
+        padding: '28px 32px',
+        maxWidth: 700,
+        margin: '0 auto',
+      }}>
+        <h3 style={{ textAlign: 'center', marginTop: 0, marginBottom: '20px', fontSize: '18px' }}>
+          FAQs and other questions
+        </h3>
+        {faqs.map((faq, i) => (
+          <div key={i} style={{ borderBottom: i < faqs.length - 1 ? '1px solid rgba(128,128,128,0.2)' : 'none' }}>
+            <button
+              type="button"
+              onClick={() => setFaqOpen(faqOpen === i ? null : i)}
+              style={{
+                all: 'unset',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                width: '100%',
+                padding: '14px 0',
+                cursor: 'pointer',
+                fontSize: '0.95rem',
+                fontWeight: 600,
+              }}
+            >
+              {faq.q}
+              <span style={{ marginLeft: '12px', opacity: 0.5 }}>{faqOpen === i ? '−' : '+'}</span>
+            </button>
+            {faqOpen === i && (
+              <p style={{ margin: '0 0 14px', opacity: 0.75, lineHeight: 1.6, fontSize: '0.9rem' }}>
+                {faq.a}
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

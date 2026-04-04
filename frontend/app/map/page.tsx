@@ -5,11 +5,17 @@ import { addFavorite, FavoriteStation, loadFavorites, removeFavorite } from '@/a
 
 const DEFAULT_SEARCH_RADIUS_MILES = 5;
 
+
 type FuelPrices = {
   regular: number;
   midGrade: number;
   premium: number;
   diesel: number;
+};
+type Filters = {
+  stationBrand: string;
+  fuelType: string;
+  priceRange: {min: number; max: number };
 };
 
 type StationFeature = {
@@ -138,7 +144,47 @@ function getAvailableFuelTypes(tags: Record<string, string> | undefined) {
     .filter(([key, val]) => key.startsWith('fuel:') && ['yes', '1', 'true'].includes(val.toLowerCase()))
     .map(([key]) => titleCase(key.replace('fuel:', '')));
 }
+function extractUniqueBrands(stations: StationFeature[]) {
+  const brands = new Set<string>();
+  stations.forEach((station) => {
+    const brand= station.properties?.tags?.brand || station.properties?.tags?.operator;
+    if (brand) brands.add(brand);
+  });
+  return Array.from(brands).sort();
+}
+function extractUniqueFuelTypes(stations: StationFeature[]): string[] {
+  const fuelTypes = new Set<string>();
+  stations.forEach((station) => {
+    const types = getAvailableFuelTypes(station.properties?.tags);
+    types.forEach((type) => fuelTypes.add(type));
+  });
+  return Array.from(fuelTypes).sort();
+}
+function filterStations(stations: StationFeature[], filters: Filters): StationFeature[] {
+  return stations.filter((station) => {
+    const tags = station.properties?.tags;
+    const brand = tags?.brand || tags?.operator || '';
+    const fuelTypes = getAvailableFuelTypes(tags);
+    const regularPrice = station.fuelPrices.regular;
 
+    // Filter by brand
+    if (filters.stationBrand && filters.stationBrand !== 'all') {
+      if (brand !== filters.stationBrand) return false;
+    }
+
+    // Filter by fuel type
+    if (filters.fuelType && filters.fuelType !== 'all') {
+      if (!fuelTypes.includes(filters.fuelType)) return false;
+    }
+
+    // Filter by price range
+    if (regularPrice < filters.priceRange.min || regularPrice > filters.priceRange.max) {
+      return false;
+    }
+
+    return true;
+  });
+}
 function buildStationPopupHtml(station: StationFeature, centerLat: number, centerLng: number, isFavorite: boolean) {
   const tags = station?.properties?.tags as Record<string, string> | undefined;
   const name = station?.text || tags?.name || tags?.brand || 'Gas Station';
@@ -192,14 +238,24 @@ function buildStationPopupHtml(station: StationFeature, centerLat: number, cente
 }
 
 export default function MapPage() {
-  const [stations, setStations] = useState<StationFeature[]>([]);
-  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
+  const [allStations, setAllStations] = useState<StationFeature[]>([]);
+  const [filteredStations, setFilteredStations] = useState<StationFeature[]>([]);  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
   const [savedFavorites, setSavedFavorites] = useState<FavoriteStation[]>([]);
   const [loading, setLoading] = useState(false);
-  const [locationQuery, setLocationQuery] = useState('');
+  const [loadingMessage, setLoadingMessage] = useState('');
+  const [locationQuery, setLocationQuery] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return new URLSearchParams(window.location.search).get('location') || '';
+    }
+    return '';
+  });
   const [radiusMiles, setRadiusMiles] = useState(DEFAULT_SEARCH_RADIUS_MILES);
   const [searchError, setSearchError] = useState('');
   const [searchingLocation, setSearchingLocation] = useState(false);
+  const [filters, setFilters] = useState<Filters>({stationBrand: 'all', fuelType: 'all',priceRange: { min: MIN_FUEL_PRICE, max: MAX_FUEL_PRICE }, });
+  const [availableBrands, setAvailableBrands] = useState<string[]>([]);
+  const [availableFuelTypes, setAvailableFuelTypes] = useState<string[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<any>(null);
   const mapboxRef = useRef<any>(null);
@@ -207,6 +263,7 @@ export default function MapPage() {
   const selectedLocationMarkerRef = useRef<any>(null);
   const radiusMilesRef = useRef(DEFAULT_SEARCH_RADIUS_MILES);
   const currentCenterRef = useRef<{ lat: number; lng: number } | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const favoriteIdsRef = useRef<Set<string>>(new Set());
   const refreshStationsRef = useRef<(lat: number, lng: number) => Promise<void>>(async () => {});
   const searchLocationRef = useRef<(query: string) => Promise<void>>(async () => {});
@@ -217,6 +274,13 @@ export default function MapPage() {
     setFavoriteIds(ids);
     setSavedFavorites(favorites);
   }, []);
+    
+  useEffect(() => {
+  const filtered = filterStations(allStations, filters);
+  setFilteredStations(filtered);
+  setAvailableBrands(extractUniqueBrands(allStations));
+  setAvailableFuelTypes(extractUniqueFuelTypes(allStations));
+  }, [allStations, filters]);
 
   useEffect(() => {
     favoriteIdsRef.current = favoriteIds;
@@ -241,22 +305,55 @@ export default function MapPage() {
     }
 
     const fetchPlaces = async (lat: number, lng: number) => {
+      // Cancel any in-flight request
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
+      // Clear previous results immediately
+      stationMarkersRef.current.forEach((m) => m.remove());
+      stationMarkersRef.current = [];
+      setAllStations([]);
+
       setLoading(true);
+      setLoadingMessage('Searching for gas stations...');
       setSearchError('');
       try {
         const selectedRadiusMiles = radiusMilesRef.current;
-        const radiusMeters = milesToMeters(selectedRadiusMiles);
 
-        const overpassQuery = `[out:json][timeout:30][maxsize:536870912];(node["amenity"="fuel"](around:${radiusMeters},${lat},${lng});way["amenity"="fuel"](around:${radiusMeters},${lat},${lng});relation["amenity"="fuel"](around:${radiusMeters},${lat},${lng}););out center;`;
+        // Use bounding box query — much faster than "around" on Overpass
+        const bbox = getBoundingBox(lat, lng, selectedRadiusMiles);
+        const overpassQuery = `[out:json][timeout:10];(node["amenity"="fuel"](${bbox.minLat},${bbox.minLng},${bbox.maxLat},${bbox.maxLng});way["amenity"="fuel"](${bbox.minLat},${bbox.minLng},${bbox.maxLat},${bbox.maxLng}););out center;`;
 
-        const res = await fetch('https://overpass-api.de/api/interpreter', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
-          body: `data=${encodeURIComponent(overpassQuery)}`,
-        });
+        let res: Response | undefined;
+        let rawBody = '';
+        const maxRetries = 3;
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+          if (controller.signal.aborted) return;
+          if (attempt > 0) {
+            setLoadingMessage(`Retrying... (attempt ${attempt + 1} of ${maxRetries})`);
+          }
+          try {
+            res = await fetch('https://overpass-api.de/api/interpreter', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+              body: `data=${encodeURIComponent(overpassQuery)}`,
+              signal: controller.signal,
+            });
+            rawBody = await res.text();
+            if (res.ok) break;
+          } catch (fetchErr: any) {
+            if (fetchErr?.name === 'AbortError') return;
+            if (attempt === maxRetries - 1) throw fetchErr;
+          }
+          await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+        }
+        if (controller.signal.aborted) return;
+        if (!res || !res.ok) throw new Error(`OpenStreetMap request failed with status ${res?.status ?? 'unknown'}.`);
 
-        const rawBody = await res.text();
-        if (!res.ok) throw new Error(`OpenStreetMap request failed with status ${res.status}.`);
+        setLoadingMessage('Processing results...');
 
         let data: any;
         try {
@@ -301,48 +398,19 @@ export default function MapPage() {
           return distanceMiles(lat, lng, fLat, fLng) <= selectedRadiusMiles;
         });
 
-        // Reverse geocode missing addresses (but be conservative about requests)
-        const enrichedFeatures = await Promise.all(
-          inRadiusFeatures.map(async (feature, index) => {
-            const placeName = feature?.place_name;
-            const isRealAddress = placeName && placeName.includes(',');
-            if (isRealAddress) return feature;
+        setLoadingMessage(`Found ${inRadiusFeatures.length} stations. Calculating prices...`);
 
-            const coords = feature?.geometry?.coordinates;
-            if (!coords || coords.length < 2) return feature;
-
-            try {
-              const [lng2, lat2] = coords;
-              await new Promise((r) => setTimeout(r, index * 50));
-              const reverseGeocodeUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng2},${lat2}.json?limit=1&access_token=${token}`;
-              const r = await fetch(reverseGeocodeUrl);
-              if (!r.ok) return feature;
-              const json = await r.json();
-              const result = json?.features?.[0];
-              if (result?.place_name) return { ...feature, geocoded_address: result.place_name };
-            } catch (err) {
-              // ignore per-feature errors
-            }
-
-            return feature;
-          })
-        );
-
-        const stationsWithPrices: StationFeature[] = enrichedFeatures
+        const stationsWithPrices: StationFeature[] = inRadiusFeatures
           .map((feature) => ({ ...feature, fuelPrices: generateFuelPrices() }))
           .sort((a, b) => a.fuelPrices.regular - b.fuelPrices.regular)
           .map((station, index) => ({ ...station, isCheapest: index === 0 }));
 
-        // remove old markers
-        stationMarkersRef.current.forEach((m) => m.remove());
-        stationMarkersRef.current = [];
-
-        setStations(stationsWithPrices);
-
-        // create markers and bounds
+        setLoadingMessage('Placing markers on map...');
+        setAllStations(stationsWithPrices);
         if (mapInstanceRef.current && mapboxRef.current) {
           let bounds: any = null;
           stationsWithPrices.forEach((f) => {
+            if (!mapInstanceRef.current || !mapboxRef.current) return;
             const coords = f?.geometry?.coordinates;
             if (!coords || coords.length < 2) return;
             const [lng2, lat2] = coords;
@@ -404,6 +472,7 @@ export default function MapPage() {
         setSearchError('OpenStreetMap is temporarily unavailable. Please try again in a moment.');
       } finally {
         setLoading(false);
+        setLoadingMessage('');
       }
     };
 
@@ -423,6 +492,12 @@ export default function MapPage() {
 
       setSearchingLocation(true);
       setSearchError('');
+      setLoadingMessage('Looking up location...');
+
+      // Clear old results immediately so it feels like a fresh search
+      stationMarkersRef.current.forEach((m) => m.remove());
+      stationMarkersRef.current = [];
+      setAllStations([]);
 
       try {
         const geocodeUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(trimmed)}.json?limit=1&autocomplete=true&types=address,postcode,place,locality,neighborhood&access_token=${token}`;
@@ -472,18 +547,30 @@ export default function MapPage() {
         .setLngLat([lng, lat])
         .addTo(mapInstanceRef.current);
       currentCenterRef.current = { lat, lng };
-
-      await fetchPlaces(lat, lng);
     };
 
-    if (navigator.geolocation) {
+    const locationParam = new URLSearchParams(window.location.search).get('location');
+
+    const initAndSearch = async (lat: number, lng: number) => {
+      await init(lat, lng);
+      if (locationParam && searchLocationRef.current) {
+        await searchLocationRef.current(locationParam);
+      } else {
+        await fetchPlaces(lat, lng);
+      }
+    };
+
+    if (locationParam) {
+      // Skip geolocation when we have a search location — use default center just to init the map
+      initAndSearch(35.311795, -80.741203);
+    } else if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (pos) => init(pos.coords.latitude, pos.coords.longitude),
-        () => init(35.311795, -80.741203),
+        (pos) => initAndSearch(pos.coords.latitude, pos.coords.longitude),
+        () => initAndSearch(35.311795, -80.741203),
         { timeout: 5000 }
       );
     } else {
-      init(35.311795, -80.741203);
+      initAndSearch(35.311795, -80.741203);
     }
 
     return () => {
@@ -493,7 +580,75 @@ export default function MapPage() {
       mapInstanceRef.current?.remove();
     };
   }, []);
+    useEffect(() => {
+    if (!mapInstanceRef.current || !mapboxRef.current || !currentCenterRef.current) return;
 
+    // Remove old markers
+    stationMarkersRef.current.forEach((m) => m.remove());
+    stationMarkersRef.current = [];
+
+    const { lat, lng } = currentCenterRef.current;
+
+    // Create markers for filtered stations
+    let bounds: any = null;
+    filteredStations.forEach((f) => {
+      const coords = f?.geometry?.coordinates;
+      if (!coords || coords.length < 2) return;
+      const [lng2, lat2] = coords;
+      
+      const popup = new mapboxRef.current.Popup({ offset: 8 }).setHTML(
+        buildStationPopupHtml(f, lat, lng, favoriteIdsRef.current.has(f.id))
+      );
+
+      popup.on('open', () => {
+        const popupElement = popup.getElement();
+        const button = popupElement?.querySelector(`[data-favorite-id="${f.id}"]`) as HTMLButtonElement | null;
+        if (!button) return;
+
+        button.onclick = () => {
+          const currentlyFavorite = favoriteIdsRef.current.has(f.id);
+
+          if (currentlyFavorite) {
+            const updated = removeFavorite(f.id);
+            const nextIds = new Set(updated.map((favorite) => favorite.id));
+            setFavoriteIds(nextIds);
+            setSavedFavorites(updated);
+            button.textContent = '☆ Save';
+            button.style.background = '#ffffff';
+            button.style.color = '#111111';
+          } else {
+            const updated = addFavorite({
+              id: f.id,
+              name: f.text,
+              address: f.place_name || f.geocoded_address,
+            });
+            const nextIds = new Set(updated.map((favorite) => favorite.id));
+            setFavoriteIds(nextIds);
+            setSavedFavorites(updated);
+            button.textContent = '★ Saved';
+            button.style.background = '#14532d';
+            button.style.color = '#ffffff';
+          }
+        };
+      });
+
+      const marker = new mapboxRef.current.Marker({
+        color: f.isCheapest ? '#16a34a' : '#e53935',
+        scale: f.isCheapest ? 1.45 : 1,
+      })
+        .setLngLat([lng2, lat2])
+        .setPopup(popup)
+        .addTo(mapInstanceRef.current);
+      stationMarkersRef.current.push(marker);
+
+      if (!bounds) bounds = new mapboxRef.current.LngLatBounds([lng2, lat2], [lng2, lat2]);
+      bounds.extend([lng2, lat2]);
+    });
+
+    if (bounds && filteredStations.length > 0) {
+      mapInstanceRef.current.fitBounds(bounds, { padding: 50, maxZoom: 13 });
+    }
+  }, [filteredStations, favoriteIds]);
   const onSubmitLocation = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
@@ -528,6 +683,31 @@ export default function MapPage() {
     if (marker?.togglePopup) {
       marker.togglePopup();
     }
+  };
+    const onBrandChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setFilters((prev) => ({ ...prev, stationBrand: e.target.value }));
+  };
+
+  const onFuelTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setFilters((prev) => ({ ...prev, fuelType: e.target.value }));
+  };
+
+  const onPriceMinChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const min = Number(e.target.value);
+    setFilters((prev) => ({ ...prev, priceRange: { ...prev.priceRange, min } }));
+  };
+
+  const onPriceMaxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const max = Number(e.target.value);
+    setFilters((prev) => ({ ...prev, priceRange: { ...prev.priceRange, max } }));
+  };
+
+  const onClearFilters = () => {
+    setFilters({
+      stationBrand: 'all',
+      fuelType: 'all',
+      priceRange: { min: MIN_FUEL_PRICE, max: MAX_FUEL_PRICE },
+    });
   };
 
   return (
@@ -595,6 +775,151 @@ export default function MapPage() {
           {searchingLocation || loading ? 'Searching...' : 'Search'}
         </button>
       </form>
+            <div
+        style={{
+          marginBottom: '1rem',
+          padding: '0.75rem',
+          border: '1px solid #ccc',
+          borderRadius: 10,
+          backgroundColor: 'var(--background)',
+        }}
+      >
+        <div style={{ marginBottom: '1rem' }}>
+  <button
+    type="button"
+    onClick={() => setShowFilters((prev) => !prev)}
+    style={{
+      padding: '0.5rem 0.85rem',
+      border: '1px solid #ccc',
+      borderRadius: 8,
+      cursor: 'pointer',
+      backgroundColor: 'var(--background)',
+      color: 'var(--foreground)',
+      fontWeight: 500,
+      marginBottom: '0.5rem',
+    }}
+  >
+    {showFilters ? '▲ Hide Filters' : '▼ Show Filters'}
+  </button>
+
+  {showFilters && (
+    <div
+      style={{
+        padding: '0.75rem',
+        border: '1px solid #ccc',
+        borderRadius: 10,
+        backgroundColor: 'var(--background)',
+      }}
+    >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+          <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600 }}>Filters</h3>
+          <button
+            type="button"
+            onClick={onClearFilters}
+            style={{
+              padding: '0.25rem 0.5rem',
+              border: '1px solid #ccc',
+              borderRadius: 6,
+              fontSize: '0.85rem',
+              cursor: 'pointer',
+              backgroundColor: 'var(--background)',
+              color: 'var(--foreground)',
+            }}
+          >
+            Clear Filters
+          </button>
+        </div>
+        
+        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+          {/* Station Brand Filter */}
+          <div style={{ flex: '1 1 180px' }}>
+            <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: 500 }}>
+              Station Brand
+            </label>
+            <select
+              value={filters.stationBrand}
+              onChange={onBrandChange}
+              style={{
+                width: '100%',
+                padding: '0.45rem 0.55rem',
+                border: '1px solid #ccc',
+                borderRadius: 6,
+                backgroundColor: 'var(--background)',
+                color: 'var(--foreground)',
+              }}
+            >
+              <option value="all">All Brands</option>
+              {availableBrands.map((brand) => (
+                <option key={brand} value={brand}>
+                  {brand}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Fuel Type Filter */}
+          <div style={{ flex: '1 1 180px' }}>
+            <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: 500 }}>
+              Fuel Type
+            </label>
+            <select
+              value={filters.fuelType}
+              onChange={onFuelTypeChange}
+              style={{
+                width: '100%',
+                padding: '0.45rem 0.55rem',
+                border: '1px solid #ccc',
+                borderRadius: 6,
+                backgroundColor: 'var(--background)',
+                color: 'var(--foreground)',
+              }}
+            >
+              <option value="all">All Fuel Types</option>
+              {availableFuelTypes.map((fuelType) => (
+                <option key={fuelType} value={fuelType}>
+                  {fuelType}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Price Range Filter */}
+          <div style={{ flex: '1 1 280px' }}>
+            <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: 500 }}>
+              Regular Price Range: ${filters.priceRange.min.toFixed(2)} - ${filters.priceRange.max.toFixed(2)}
+            </label>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <input
+                type="range"
+                min={MIN_FUEL_PRICE}
+                max={MAX_FUEL_PRICE}
+                step={0.01}
+                value={filters.priceRange.min}
+                onChange={onPriceMinChange}
+                style={{ flex: 1 }}
+              />
+              <span style={{ fontSize: '0.8rem' }}>to</span>
+              <input
+                type="range"
+                min={MIN_FUEL_PRICE}
+                max={MAX_FUEL_PRICE}
+                step={0.01}
+                value={filters.priceRange.max}
+                onChange={onPriceMaxChange}
+                style={{ flex: 1 }}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+  )}
+</div>
+
+        {/* Filter Results Summary */}
+        <div style={{ marginTop: '0.5rem', fontSize: '0.85rem', color: '#666' }}>
+          Showing {filteredStations.length} of {allStations.length} stations
+        </div>
+      </div>
 
       {searchError && <p style={{ color: '#8b1a1a', marginTop: 0, marginBottom: '0.9rem' }}>{searchError}</p>}
 
@@ -649,11 +974,11 @@ export default function MapPage() {
               </ul>
             )}
           </div>
-          {loading && <p style={{ marginTop: 0 }}>Loading gas stations from OpenStreetMap within {radiusMiles} miles...</p>}
-          {!loading && stations.length > 0 && <p style={{ marginTop: 0 }}>Showing {stations.length} gas stations within {radiusMiles} miles (sorted by cheapest regular).</p>}
-          {!loading && stations.length === 0 && <p style={{ marginTop: 0 }}>No stations found.</p>}
+          {loading && <p style={{ marginTop: 0 }}>{loadingMessage || 'Loading...'}</p>}
+          {!loading && filteredStations.length > 0 && <p style={{ marginTop: 0 }}>Showing {filteredStations.length} gas stations within {radiusMiles} miles (sorted by cheapest regular).</p>}
+          {!loading && filteredStations.length === 0 && <p style={{ marginTop: 0 }}>No stations found.</p>}
           <ul style={{ paddingLeft: '1rem', marginBottom: 0 }}>
-            {stations.map((s, i) => {
+            {filteredStations.map((s, i) => {
               // Display address in sidebar - prefer place_name, fallback to geocoded_address
               const displayAddress = s.place_name ? s.place_name : s.geocoded_address;
               return (
