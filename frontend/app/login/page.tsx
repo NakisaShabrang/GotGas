@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import './login.css';
 import Link from 'next/dist/client/link';
@@ -14,6 +14,15 @@ export default function LoginPage() {
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState('');
   const router = useRouter();
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const msg = params.get('message');
+    if (msg) {
+      setMessage(msg);
+      setMessageType('error');
+    }
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,7 +44,7 @@ export default function LoginPage() {
         setMessage(data.message);
         setMessageType('success');
         localStorage.setItem('user', data.username);
-        setTimeout(() => router.push('/dashboard'), 1000);
+        setTimeout(() => { window.location.href = '/'; }, 1000);
       } else {
         setMessage(data.error);
         setMessageType('error');

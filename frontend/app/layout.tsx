@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import Link from "next/link";
+import Navbar from "./components/Navbar";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -35,23 +35,7 @@ export default function RootLayout({
             padding: "0 16px",
           }}
         >
-          <nav
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              maxWidth: "1200px",
-              margin: "0 auto",
-              height: "56px",
-            }}
-          >
-            <strong style={{ fontSize: "20px", color: "#ffffff", marginRight: "auto" }}>GotGas</strong>
-            <Link href="/predictions" className="nav-link">Predictions</Link>
-            <Link href="/" className="nav-link">Home</Link>
-            <Link href="/map" className="nav-link">Map</Link>
-            <Link href="/favorites" className="nav-link">Favorites</Link>
-            <Link href="/login" className="nav-login">Profile</Link>
-          </nav>
+          <Navbar />
         </header>
 
         {/* Page Content */}

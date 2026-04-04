@@ -118,5 +118,33 @@ def user_info():
     
     return jsonify({"error": "User not found"}), 404
 
+@app.route("/profile", methods=["GET"])
+def profile():
+    if 'user' not in session:
+        return jsonify({"error": "Please log in to view your profile."}), 401
+
+    user = users_collection.find_one(
+        {"username": session['user']},
+        {"password": 0}
+    )
+
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    created_at = user.get("created_at")
+    if created_at:
+        try:
+            created_at = created_at.strftime("%B %Y")
+        except Exception:
+            created_at = str(created_at)
+
+    return jsonify({
+        "username": user.get("username", ""),
+        "email": user.get("email"),
+        "fullName": user.get("full_name"),
+        "phone": user.get("phone"),
+        "memberSince": created_at,
+    }), 200
+
 if __name__ == "__main__":
     app.run(debug=True, port=5000)

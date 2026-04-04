@@ -27,21 +27,21 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-.nav-link {
-  color: #d1fae5;
-  text-decoration: none;
+a.nav-link {
+  color: #d1fae5 !important;
+  text-decoration: none !important;
   padding: 6px 14px;
   border-radius: 6px;
   font-size: 0.95rem;
 }
 
-.nav-link:hover {
+a.nav-link:hover {
   background: rgba(255, 255, 255, 0.15);
 }
 
-.nav-login {
-  color: #ffffff;
-  text-decoration: none;
+a.nav-login {
+  color: #ffffff !important;
+  text-decoration: none !important;
   padding: 6px 18px;
   border-radius: 6px;
   font-size: 0.95rem;
@@ -50,7 +50,7 @@ body {
   margin-left: 8px;
 }
 
-.nav-login:hover {
+a.nav-login:hover {
   background-color: rgba(255, 255, 255, 0.3);
 }
 
