@@ -20,20 +20,19 @@ import {
 } from "@/app/lib/favorites";
 
 const cardStyle = {
-  border: "1px solid rgba(15,23,42,0.12)",
+  border: "1px solid rgba(128,128,128,0.3)",
   borderRadius: 12,
   padding: 12,
-  background: "#ffffff",
-  color: "#172033",
-  boxShadow: "0 10px 30px rgba(15,23,42,0.06)",
+  background: "var(--background)",
+  color: "var(--foreground)",
 };
 
 const secondaryButtonStyle = {
   padding: "8px 10px",
   borderRadius: 10,
-  border: "1px solid rgba(37,99,235,0.22)",
-  background: "#f8fbff",
-  color: "#1d4ed8",
+  border: "1px solid rgba(128,128,128,0.3)",
+  background: "var(--background)",
+  color: "#16a34a",
   cursor: "pointer",
 };
 
@@ -42,9 +41,9 @@ const inputStyle = {
   maxWidth: 320,
   padding: "8px 10px",
   borderRadius: 8,
-  border: "1px solid rgba(15,23,42,0.18)",
-  background: "#ffffff",
-  color: "#172033",
+  border: "1px solid rgba(128,128,128,0.3)",
+  background: "var(--background)",
+  color: "var(--foreground)",
 };
 
 export default function FavoritesClient() {
@@ -168,7 +167,7 @@ export default function FavoritesClient() {
   const hasGroups = groups.length > 0;
 
   return (
-    <div style={{ display: "grid", gap: 24, color: "#172033" }}>
+    <div style={{ display: "grid", gap: 24 }}>
       <section style={{ display: "grid", gap: 12 }}>
         <div
           style={{
@@ -215,7 +214,7 @@ export default function FavoritesClient() {
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button
                 onClick={handleCreateGroup}
-                style={{ ...secondaryButtonStyle, background: "#1d4ed8", borderColor: "#1d4ed8", color: "#ffffff" }}
+                style={{ ...secondaryButtonStyle, background: "#14532d", borderColor: "#14532d", color: "#ffffff" }}
               >
                 Save List
               </button>
@@ -299,7 +298,7 @@ export default function FavoritesClient() {
                         <>
                           <button
                             onClick={() => handleConfirmGroupRename(group.id)}
-                            style={{ ...secondaryButtonStyle, background: "#1d4ed8", borderColor: "#1d4ed8", color: "#ffffff" }}
+                            style={{ ...secondaryButtonStyle, background: "#14532d", borderColor: "#14532d", color: "#ffffff" }}
                           >
                             Save
                           </button>
@@ -324,7 +323,7 @@ export default function FavoritesClient() {
                             justifyContent: "space-between",
                             gap: 12,
                             alignItems: "center",
-                            borderTop: "1px solid rgba(15,23,42,0.08)",
+                            borderTop: "1px solid rgba(128,128,128,0.2)",
                             paddingTop: 8,
                           }}
                         >
@@ -436,7 +435,7 @@ export default function FavoritesClient() {
                         <>
                           <button
                             onClick={() => handleConfirmRename(favorite.id)}
-                            style={{ ...secondaryButtonStyle, background: "#1d4ed8", borderColor: "#1d4ed8", color: "#ffffff" }}
+                            style={{ ...secondaryButtonStyle, background: "#14532d", borderColor: "#14532d", color: "#ffffff" }}
                           >
                             Confirm
                           </button>
@@ -453,7 +452,7 @@ export default function FavoritesClient() {
                   </div>
 
                   {isExpanded && (
-                    <div style={{ borderTop: "1px solid rgba(15,23,42,0.08)", paddingTop: 12 }}>
+                    <div style={{ borderTop: "1px solid rgba(128,128,128,0.2)", paddingTop: 12 }}>
                       {!hasGroups && (
                         <p style={{ margin: 0 }}>Create a list first, then add this station to it.</p>
                       )}
