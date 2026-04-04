@@ -31,26 +31,24 @@ export default function RootLayout({
         {/* Top Navigation */}
         <header
           style={{
-            backgroundColor: "#14532d",
-            padding: "0 16px",
+            borderBottom: "1px solid rgba(0,0,0,0.1)",
+            padding: "16px",
           }}
         >
           <nav
             style={{
               display: "flex",
               alignItems: "center",
-              gap: "8px",
+              gap: "20px",
               maxWidth: "1200px",
               margin: "0 auto",
-              height: "56px",
             }}
           >
-            <strong style={{ fontSize: "20px", color: "#ffffff", marginRight: "auto" }}>GotGas</strong>
-            <Link href="/predictions" className="nav-link">Predictions</Link>
-            <Link href="/" className="nav-link">Home</Link>
-            <Link href="/map" className="nav-link">Map</Link>
-            <Link href="/favorites" className="nav-link">Favorites</Link>
-            <Link href="/login" className="nav-login">Profile</Link>
+            <strong style={{ fontSize: "18px" }}>GotGas</strong>
+            <Link href="/">Home</Link>
+            <Link href="/map">Map</Link>
+            <Link href="/favorites">Favorites</Link>
+            <Link href="/login">Login</Link>
           </nav>
         </header>
 
