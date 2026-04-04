@@ -6,7 +6,7 @@ import './login.css';
 import Link from 'next/dist/client/link';
 import link from 'next/link';
 
-const API_URL = 'http://127.0.0.1:5000';
+const API_URL = 'http://localhost:5000';
 
 export default function LoginPage() {
   const [username, setUsername] = useState('');
@@ -16,13 +16,19 @@ export default function LoginPage() {
   const router = useRouter();
 
   useEffect(() => {
+    const user = localStorage.getItem('user');
+    if (user) {
+      router.push('/profile');
+      return;
+    }
+
     const params = new URLSearchParams(window.location.search);
     const msg = params.get('message');
     if (msg) {
       setMessage(msg);
       setMessageType('error');
     }
-  }, []);
+  }, [router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

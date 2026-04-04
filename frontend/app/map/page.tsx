@@ -269,10 +269,13 @@ export default function MapPage() {
   const searchLocationRef = useRef<(query: string) => Promise<void>>(async () => {});
 
   useEffect(() => {
-    const favorites = loadFavorites();
-    const ids = new Set(favorites.map((favorite) => favorite.id));
-    setFavoriteIds(ids);
-    setSavedFavorites(favorites);
+    async function fetchFavorites() {
+      const favorites = await loadFavorites();
+      const ids = new Set(favorites.map((favorite) => favorite.id));
+      setFavoriteIds(ids);
+      setSavedFavorites(favorites);
+    }
+    fetchFavorites();
   }, []);
     
   useEffect(() => {
@@ -423,11 +426,11 @@ export default function MapPage() {
               const button = popupElement?.querySelector(`[data-favorite-id="${f.id}"]`) as HTMLButtonElement | null;
               if (!button) return;
 
-              button.onclick = () => {
+              button.onclick = async () => {
                 const currentlyFavorite = favoriteIdsRef.current.has(f.id);
 
                 if (currentlyFavorite) {
-                  const updated = removeFavorite(f.id);
+                  const updated = await removeFavorite(f.id);
                   const nextIds = new Set(updated.map((favorite) => favorite.id));
                   setFavoriteIds(nextIds);
                   setSavedFavorites(updated);
@@ -435,7 +438,7 @@ export default function MapPage() {
                   button.style.background = '#ffffff';
                   button.style.color = '#111111';
                 } else {
-                  const updated = addFavorite({
+                  const updated = await addFavorite({
                     id: f.id,
                     name: f.text,
                     address: f.place_name || f.geocoded_address,
@@ -605,11 +608,11 @@ export default function MapPage() {
         const button = popupElement?.querySelector(`[data-favorite-id="${f.id}"]`) as HTMLButtonElement | null;
         if (!button) return;
 
-        button.onclick = () => {
+        button.onclick = async () => {
           const currentlyFavorite = favoriteIdsRef.current.has(f.id);
 
           if (currentlyFavorite) {
-            const updated = removeFavorite(f.id);
+            const updated = await removeFavorite(f.id);
             const nextIds = new Set(updated.map((favorite) => favorite.id));
             setFavoriteIds(nextIds);
             setSavedFavorites(updated);
@@ -617,7 +620,7 @@ export default function MapPage() {
             button.style.background = '#ffffff';
             button.style.color = '#111111';
           } else {
-            const updated = addFavorite({
+            const updated = await addFavorite({
               id: f.id,
               name: f.text,
               address: f.place_name || f.geocoded_address,

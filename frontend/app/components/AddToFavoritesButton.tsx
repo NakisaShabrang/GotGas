@@ -6,8 +6,8 @@ import { addFavorite } from "@/app/lib/favorites";
 export default function AddToFavoritesButton() {
   const [message, setMessage] = useState("");
 
-  function handleAdd() {
-    addFavorite({
+  async function handleAdd() {
+    await addFavorite({
       id: "demo-1",
       name: "Shell - Demo Station",
       address: "123 Tryon St, Charlotte, NC",

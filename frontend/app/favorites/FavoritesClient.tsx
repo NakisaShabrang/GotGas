@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   addStationToFavoriteGroup,
   createFavoriteGroup,
@@ -47,8 +47,9 @@ const inputStyle = {
 };
 
 export default function FavoritesClient() {
-  const [favorites, setFavorites] = useState<FavoriteStation[]>(() => loadFavorites());
-  const [groups, setGroups] = useState<FavoriteGroup[]>(() => loadFavoriteGroups());
+  const [favorites, setFavorites] = useState<FavoriteStation[]>([]);
+  const [groups, setGroups] = useState<FavoriteGroup[]>([]);
+  const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftName, setDraftName] = useState("");
   const [renameError, setRenameError] = useState("");
@@ -60,10 +61,20 @@ export default function FavoritesClient() {
   const [groupRenameError, setGroupRenameError] = useState("");
   const [expandedFavoriteId, setExpandedFavoriteId] = useState<string | null>(null);
 
-  function handleRemove(id: string) {
-    const updated = removeFavorite(id);
+  useEffect(() => {
+    async function fetchData() {
+      const [favs, grps] = await Promise.all([loadFavorites(), loadFavoriteGroups()]);
+      setFavorites(favs);
+      setGroups(grps);
+      setLoading(false);
+    }
+    fetchData();
+  }, []);
+
+  async function handleRemove(id: string) {
+    const updated = await removeFavorite(id);
     setFavorites(updated);
-    setGroups(loadFavoriteGroups());
+    setGroups(await loadFavoriteGroups());
 
     if (editingId === id) {
       setEditingId(null);
@@ -88,7 +99,7 @@ export default function FavoritesClient() {
     setRenameError("");
   }
 
-  function handleConfirmRename(id: string) {
+  async function handleConfirmRename(id: string) {
     if (!isValidFavoriteName(draftName)) {
       const trimmedLength = draftName.trim().length;
       if (trimmedLength === 0) {
@@ -99,21 +110,21 @@ export default function FavoritesClient() {
       return;
     }
 
-    const updated = updateFavoriteName(id, draftName);
+    const updated = await updateFavoriteName(id, draftName);
     setFavorites(updated);
     setEditingId(null);
     setDraftName("");
     setRenameError("");
   }
 
-  function handleCreateGroup() {
+  async function handleCreateGroup() {
     const error = getFavoriteGroupNameError(newGroupName, groups);
     if (error) {
       setNewGroupError(error);
       return;
     }
 
-    const updated = createFavoriteGroup(newGroupName);
+    const updated = await createFavoriteGroup(newGroupName);
     setGroups(updated);
     setIsCreatingGroup(false);
     setNewGroupName("");
@@ -132,20 +143,20 @@ export default function FavoritesClient() {
     setGroupRenameError("");
   }
 
-  function handleConfirmGroupRename(groupId: string) {
+  async function handleConfirmGroupRename(groupId: string) {
     const error = getFavoriteGroupNameError(groupRenameDraft, groups, groupId);
     if (error) {
       setGroupRenameError(error);
       return;
     }
 
-    const updated = renameFavoriteGroup(groupId, groupRenameDraft);
+    const updated = await renameFavoriteGroup(groupId, groupRenameDraft);
     setGroups(updated);
     handleCancelGroupRename();
   }
 
-  function handleDeleteGroup(groupId: string) {
-    const updated = deleteFavoriteGroup(groupId);
+  async function handleDeleteGroup(groupId: string) {
+    const updated = await deleteFavoriteGroup(groupId);
     setGroups(updated);
 
     if (groupRenameId === groupId) {
@@ -153,14 +164,18 @@ export default function FavoritesClient() {
     }
   }
 
-  function handleAddStationToGroup(groupId: string, stationId: string) {
-    const updated = addStationToFavoriteGroup(groupId, stationId);
+  async function handleAddStationToGroup(groupId: string, stationId: string) {
+    const updated = await addStationToFavoriteGroup(groupId, stationId);
     setGroups(updated);
   }
 
-  function handleRemoveStationFromGroup(groupId: string, stationId: string) {
-    const updated = removeStationFromFavoriteGroup(groupId, stationId);
+  async function handleRemoveStationFromGroup(groupId: string, stationId: string) {
+    const updated = await removeStationFromFavoriteGroup(groupId, stationId);
     setGroups(updated);
+  }
+
+  if (loading) {
+    return <p style={{ opacity: 0.8 }}>Loading favorites...</p>;
   }
 
   const hasFavorites = favorites.length > 0;
