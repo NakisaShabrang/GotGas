@@ -119,6 +119,13 @@ export default function PredictionsPage() {
 
   const stateName = ALL_STATES.find((s) => s.code === selectedState)?.name;
 
+  const confidenceColor =
+    result?.confidenceLabel === "High"
+      ? "#16a34a"
+      : result?.confidenceLabel === "Medium"
+        ? "#ca8a04"
+        : "#dc2626";
+
   return (
     <div style={{ padding: "1.25rem", maxWidth: 1200, margin: "0 auto" }}>
       <div
@@ -126,23 +133,27 @@ export default function PredictionsPage() {
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
-          marginBottom: "1rem",
+          marginBottom: "1.5rem",
           flexWrap: "wrap",
-          gap: "0.5rem",
+          gap: "0.75rem",
+          paddingBottom: "1rem",
+          borderBottom: "2px solid rgba(128,128,128,0.2)",
         }}
       >
-        <h2 style={{ margin: 0 }}>Predictions</h2>
+        <h2 style={{ margin: 0, fontSize: "1.6rem" }}>Predictions</h2>
         <select
           value={selectedState}
           onChange={(e) => setSelectedState(e.target.value)}
           aria-label="State"
           style={{
-            padding: "0.5rem 0.75rem",
+            padding: "0.6rem 1rem",
             border: "1px solid #ccc",
             borderRadius: 8,
             backgroundColor: "var(--background)",
             color: "var(--foreground)",
-            minWidth: 180,
+            minWidth: 200,
+            fontSize: "1rem",
+            cursor: "pointer",
           }}
         >
           <option value="">Select a state</option>
@@ -158,12 +169,14 @@ export default function PredictionsPage() {
         <div
           role="alert"
           style={{
-            padding: "1rem",
+            padding: "1rem 1.25rem",
             border: "1px solid #dc2626",
             borderRadius: 10,
             backgroundColor: "#fef2f2",
             color: "#991b1b",
-            marginBottom: "1rem",
+            marginBottom: "1.25rem",
+            fontSize: "0.95rem",
+            lineHeight: 1.5,
           }}
         >
           {error}
@@ -174,10 +187,69 @@ export default function PredictionsPage() {
         <>
           <div
             style={{
-              border: "1px solid #ccc",
+              display: "flex",
+              gap: "1rem",
+              flexWrap: "wrap",
+              marginBottom: "1.25rem",
+            }}
+          >
+            <div
+              style={{
+                padding: "1rem 1.25rem",
+                border: "1px solid rgba(128,128,128,0.3)",
+                borderRadius: 10,
+                flex: "1 1 200px",
+                backgroundColor: "var(--background)",
+              }}
+            >
+              <div style={{ fontSize: "0.85rem", opacity: 0.6, marginBottom: "0.25rem" }}>
+                Predicted Price for {result.predictedWeek}
+              </div>
+              <div style={{ fontSize: "2rem", fontWeight: 700, color: "#2563eb" }}>
+                ${result.predictedPrice.toFixed(2)}
+                <span style={{ fontSize: "0.9rem", fontWeight: 400, opacity: 0.6 }}>/gal</span>
+              </div>
+            </div>
+            <div
+              data-testid="confidence-indicator"
+              style={{
+                padding: "1rem 1.25rem",
+                border: "1px solid rgba(128,128,128,0.3)",
+                borderRadius: 10,
+                flex: "1 1 200px",
+                backgroundColor: "var(--background)",
+              }}
+            >
+              <div style={{ fontSize: "0.85rem", opacity: 0.6, marginBottom: "0.25rem" }}>
+                Confidence
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                <span style={{ fontSize: "2rem", fontWeight: 700, color: confidenceColor }}>
+                  {result.confidence}%
+                </span>
+                <span
+                  style={{
+                    fontSize: "0.85rem",
+                    fontWeight: 600,
+                    color: "#fff",
+                    backgroundColor: confidenceColor,
+                    padding: "0.2rem 0.6rem",
+                    borderRadius: 20,
+                  }}
+                >
+                  {result.confidenceLabel}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div
+            style={{
+              border: "1px solid rgba(128,128,128,0.3)",
               borderRadius: 10,
-              padding: "1rem",
-              marginBottom: "1rem",
+              padding: "1.25rem",
+              marginBottom: "1.25rem",
+              backgroundColor: "#ffffff",
             }}
           >
             <canvas ref={canvasRef} aria-label="Gas price trend chart" />
@@ -185,56 +257,23 @@ export default function PredictionsPage() {
 
           <div
             style={{
-              display: "flex",
-              gap: "1rem",
-              flexWrap: "wrap",
-              marginBottom: "1rem",
-            }}
-          >
-            <div
-              style={{
-                padding: "0.75rem 1rem",
-                border: "1px solid #ccc",
-                borderRadius: 10,
-                flex: "1 1 200px",
-              }}
-            >
-              <strong>Predicted Price for {result.predictedWeek}:</strong>
-              <div style={{ fontSize: "1.5rem", fontWeight: 700 }}>
-                ${result.predictedPrice.toFixed(2)}/gal
-              </div>
-            </div>
-            <div
-              data-testid="confidence-indicator"
-              style={{
-                padding: "0.75rem 1rem",
-                border: "1px solid #ccc",
-                borderRadius: 10,
-                flex: "1 1 200px",
-              }}
-            >
-              <strong>Confidence:</strong>
-              <div style={{ fontSize: "1.5rem", fontWeight: 700 }}>
-                {result.confidence}% &mdash; {result.confidenceLabel}
-              </div>
-            </div>
-          </div>
-
-          <div
-            style={{
-              padding: "1rem",
-              border: "1px solid #ccc",
+              padding: "1rem 1.25rem",
+              border: "1px solid rgba(128,128,128,0.3)",
               borderRadius: 10,
+              backgroundColor: "var(--background)",
+              opacity: 0.85,
+              lineHeight: 1.6,
+              fontSize: "0.9rem",
             }}
           >
             <p style={{ margin: 0 }}>
               This chart shows the historical weekly average gas price for{" "}
-              {stateName} over the past 8 weeks, along with a predicted price
-              for next week. The prediction uses linear regression on the
-              historical trend. Use the dropdown above to select a different
-              state. The confidence indicator shows how well the historical data
-              fits a linear trend &mdash; higher confidence means the prices
-              have been changing more consistently.
+              <strong>{stateName}</strong> over the past 8 weeks, along with a
+              predicted price for next week. The prediction uses linear
+              regression on the historical trend. Use the dropdown above to
+              select a different state. The confidence indicator shows how well
+              the historical data fits a linear trend &mdash; higher confidence
+              means the prices have been changing more consistently.
             </p>
           </div>
         </>
@@ -243,13 +282,19 @@ export default function PredictionsPage() {
       {!selectedState && (
         <div
           style={{
-            padding: "1rem",
-            border: "1px solid #ccc",
+            padding: "2.5rem",
+            border: "1px solid rgba(128,128,128,0.3)",
             borderRadius: 10,
+            textAlign: "center",
+            opacity: 0.7,
+            lineHeight: 1.6,
           }}
         >
-          <p style={{ margin: 0 }}>
+          <div style={{ fontSize: "2.5rem", marginBottom: "0.75rem" }}>&#9981;</div>
+          <p style={{ margin: 0, fontSize: "1.05rem" }}>
             Select a state from the dropdown above to view gas price predictions.
+          </p>
+          <p style={{ margin: "0.5rem 0 0", fontSize: "0.9rem" }}>
             The chart will show historical price trends and a predicted price for
             next week.
           </p>

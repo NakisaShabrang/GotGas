@@ -242,7 +242,12 @@ export default function MapPage() {
   const [filteredStations, setFilteredStations] = useState<StationFeature[]>([]);  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
   const [savedFavorites, setSavedFavorites] = useState<FavoriteStation[]>([]);
   const [loading, setLoading] = useState(false);
-  const [locationQuery, setLocationQuery] = useState('');
+  const [locationQuery, setLocationQuery] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return new URLSearchParams(window.location.search).get('location') || '';
+    }
+    return '';
+  });
   const [radiusMiles, setRadiusMiles] = useState(DEFAULT_SEARCH_RADIUS_MILES);
   const [searchError, setSearchError] = useState('');
   const [searchingLocation, setSearchingLocation] = useState(false);
@@ -304,11 +309,11 @@ export default function MapPage() {
         const selectedRadiusMiles = radiusMilesRef.current;
         const radiusMeters = milesToMeters(selectedRadiusMiles);
 
-        const overpassQuery = `[out:json][timeout:30][maxsize:536870912];(node["amenity"="fuel"](around:${radiusMeters},${lat},${lng});way["amenity"="fuel"](around:${radiusMeters},${lat},${lng});relation["amenity"="fuel"](around:${radiusMeters},${lat},${lng}););out center;`;
+        const overpassQuery = `[out:json][timeout:15];(node["amenity"="fuel"](around:${radiusMeters},${lat},${lng});way["amenity"="fuel"](around:${radiusMeters},${lat},${lng}););out center;`;
 
         let res: Response | undefined;
         let rawBody = '';
-        const maxRetries = 3;
+        const maxRetries = 5;
         for (let attempt = 0; attempt < maxRetries; attempt++) {
           try {
             res = await fetch('https://overpass-api.de/api/interpreter', {
@@ -321,8 +326,8 @@ export default function MapPage() {
           } catch (fetchErr) {
             if (attempt === maxRetries - 1) throw fetchErr;
           }
-          // Wait before retrying
-          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+          // Wait before retrying (2s, 4s, 6s, 8s)
+          await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
         }
         if (!res || !res.ok) throw new Error(`OpenStreetMap request failed with status ${res?.status ?? 'unknown'}.`);
 
@@ -369,34 +374,7 @@ export default function MapPage() {
           return distanceMiles(lat, lng, fLat, fLng) <= selectedRadiusMiles;
         });
 
-        // Reverse geocode missing addresses (but be conservative about requests)
-        const enrichedFeatures = await Promise.all(
-          inRadiusFeatures.map(async (feature, index) => {
-            const placeName = feature?.place_name;
-            const isRealAddress = placeName && placeName.includes(',');
-            if (isRealAddress) return feature;
-
-            const coords = feature?.geometry?.coordinates;
-            if (!coords || coords.length < 2) return feature;
-
-            try {
-              const [lng2, lat2] = coords;
-              await new Promise((r) => setTimeout(r, index * 50));
-              const reverseGeocodeUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng2},${lat2}.json?limit=1&access_token=${token}`;
-              const r = await fetch(reverseGeocodeUrl);
-              if (!r.ok) return feature;
-              const json = await r.json();
-              const result = json?.features?.[0];
-              if (result?.place_name) return { ...feature, geocoded_address: result.place_name };
-            } catch (err) {
-              // ignore per-feature errors
-            }
-
-            return feature;
-          })
-        );
-
-        const stationsWithPrices: StationFeature[] = enrichedFeatures
+        const stationsWithPrices: StationFeature[] = inRadiusFeatures
           .map((feature) => ({ ...feature, fuelPrices: generateFuelPrices() }))
           .sort((a, b) => a.fuelPrices.regular - b.fuelPrices.regular)
           .map((station, index) => ({ ...station, isCheapest: index === 0 }));
@@ -410,6 +388,7 @@ export default function MapPage() {
         if (mapInstanceRef.current && mapboxRef.current) {
           let bounds: any = null;
           stationsWithPrices.forEach((f) => {
+            if (!mapInstanceRef.current || !mapboxRef.current) return;
             const coords = f?.geometry?.coordinates;
             if (!coords || coords.length < 2) return;
             const [lng2, lat2] = coords;
@@ -539,18 +518,27 @@ export default function MapPage() {
         .setLngLat([lng, lat])
         .addTo(mapInstanceRef.current);
       currentCenterRef.current = { lat, lng };
+    };
 
-      await fetchPlaces(lat, lng);
+    const locationParam = new URLSearchParams(window.location.search).get('location');
+
+    const initAndSearch = async (lat: number, lng: number) => {
+      await init(lat, lng);
+      if (locationParam && searchLocationRef.current) {
+        await searchLocationRef.current(locationParam);
+      } else {
+        await fetchPlaces(lat, lng);
+      }
     };
 
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (pos) => init(pos.coords.latitude, pos.coords.longitude),
-        () => init(35.311795, -80.741203),
+        (pos) => initAndSearch(pos.coords.latitude, pos.coords.longitude),
+        () => initAndSearch(35.311795, -80.741203),
         { timeout: 5000 }
       );
     } else {
-      init(35.311795, -80.741203);
+      initAndSearch(35.311795, -80.741203);
     }
 
     return () => {
