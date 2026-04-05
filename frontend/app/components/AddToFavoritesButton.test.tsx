@@ -1,9 +1,12 @@
 import { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
-import AddToFavoritesButton from '@/app/components/AddToFavoritesButton';
-import { loadFavorites, saveFavorites } from '@/app/lib/favorites';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+const mockFetch = jest.fn();
+global.fetch = mockFetch;
+
+import AddToFavoritesButton from '@/app/components/AddToFavoritesButton';
 
 describe('AddToFavoritesButton', () => {
   let container: HTMLDivElement;
@@ -13,7 +16,7 @@ describe('AddToFavoritesButton', () => {
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
-    saveFavorites([]);
+    mockFetch.mockReset();
   });
 
   afterEach(async () => {
@@ -21,7 +24,6 @@ describe('AddToFavoritesButton', () => {
       root.unmount();
     });
     container.remove();
-    saveFavorites([]);
   });
 
   async function renderButton() {
@@ -37,43 +39,42 @@ describe('AddToFavoritesButton', () => {
     expect(button?.textContent).toBe('Add Demo Station to Favorites');
   });
 
-  it('adds a demo station to favorites on click', async () => {
+  it('calls the favorites API on click', async () => {
+    mockFetch
+      .mockResolvedValueOnce({ ok: true, status: 201, json: () => Promise.resolve({ message: 'Favorite added' }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve([{ id: 'demo-1', name: 'Shell - Demo Station', createdAt: 1 }]) });
+
     await renderButton();
     const button = container.querySelector('button')!;
 
     await act(async () => {
       button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
 
-    const favorites = loadFavorites();
-    expect(favorites).toHaveLength(1);
-    expect(favorites[0].id).toBe('demo-1');
-    expect(favorites[0].name).toBe('Shell - Demo Station');
+    expect(mockFetch).toHaveBeenCalledWith(
+      'http://localhost:5000/favorites',
+      expect.objectContaining({ method: 'POST' })
+    );
   });
 
   it('shows confirmation message after clicking', async () => {
+    mockFetch
+      .mockResolvedValueOnce({ ok: true, status: 201, json: () => Promise.resolve({ message: 'Favorite added' }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve([]) });
+
     await renderButton();
     const button = container.querySelector('button')!;
 
     await act(async () => {
       button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
     });
 
     expect(container.textContent).toContain('Added to favorites!');
-  });
-
-  it('does not add duplicate favorites', async () => {
-    await renderButton();
-    const button = container.querySelector('button')!;
-
-    await act(async () => {
-      button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-    await act(async () => {
-      button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-
-    const favorites = loadFavorites();
-    expect(favorites).toHaveLength(1);
   });
 });

@@ -38,22 +38,31 @@ def register():
     data = request.get_json()
     username = data.get("username")
     password = data.get("password")
-    
+    full_name = (data.get("full_name") or "").strip() or None
+    email = (data.get("email") or "").strip() or None
+    phone = (data.get("phone") or "").strip() or None
+
     if not username or not password:
         return jsonify({"error": "Username and password are required"}), 400
 
     if len(password) < 6:
         return jsonify({"error": "Password must be at least 6 characters long"}), 400
-    
+
+    if email and '@' not in email:
+        return jsonify({"error": "Invalid email address"}), 400
+
     if users_collection.find_one({"username": username}):
         return jsonify({"error": "Username already exists"}), 400
-    
+
     hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-    
+
     user_doc = {
         "username": username,
         "password": hashed_password,
-        "created_at": datetime.utcnow()
+        "created_at": datetime.utcnow(),
+        "full_name": full_name,
+        "email": email,
+        "phone": phone,
     }
     
     try: 
@@ -132,6 +141,11 @@ def profile():
         return jsonify({"error": "User not found"}), 404
 
     created_at = user.get("created_at")
+    if not created_at:
+        try:
+            created_at = user["_id"].generation_time
+        except Exception:
+            created_at = None
     if created_at:
         try:
             created_at = created_at.strftime("%B %Y")

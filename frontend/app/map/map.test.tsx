@@ -69,6 +69,18 @@ describe('MapPage', () => {
     };
   }
 
+  function setupFetchMock(overpassElements: any[] = []) {
+    mockFetch.mockImplementation((url: string) => {
+      if (typeof url === 'string' && url.includes('localhost:5000/favorites')) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) });
+      }
+      if (typeof url === 'string' && url.includes('localhost:5000/favorite-groups')) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) });
+      }
+      return Promise.resolve(overpassResponse(overpassElements));
+    });
+  }
+
   beforeEach(() => {
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -83,14 +95,8 @@ describe('MapPage', () => {
       success({ coords: { latitude: 35.2271, longitude: -80.8431 } });
     });
 
-    // Default: Overpass API returns empty
-    mockFetch.mockResolvedValue(overpassResponse([]));
-
-    // Clear cookies
-    document.cookie.split(';').forEach((cookie) => {
-      const name = cookie.split('=')[0].trim();
-      document.cookie = `${name}=; max-age=0; path=/`;
-    });
+    // Default: handle both favorites API and Overpass API
+    setupFetchMock();
   });
 
   afterEach(async () => {
@@ -167,7 +173,7 @@ describe('MapPage', () => {
       tags: { name: 'Test Shell', amenity: 'fuel' },
     };
 
-    mockFetch.mockResolvedValueOnce(overpassResponse([stationElement]));
+    setupFetchMock([stationElement]);
 
     await renderMap();
 
@@ -183,7 +189,7 @@ describe('MapPage', () => {
       tags: { name: 'Price Station', amenity: 'fuel' },
     };
 
-    mockFetch.mockResolvedValueOnce(overpassResponse([stationElement]));
+    setupFetchMock([stationElement]);
 
     await renderMap();
 
@@ -200,7 +206,7 @@ describe('MapPage', () => {
       { type: 'node', id: 2, lat: 35.24, lon: -80.85, tags: { name: 'Station B', amenity: 'fuel' } },
     ];
 
-    mockFetch.mockResolvedValueOnce(overpassResponse(stations));
+    setupFetchMock(stations);
 
     await renderMap();
 
@@ -213,7 +219,7 @@ describe('MapPage', () => {
       { type: 'node', id: 2, lat: 35.24, lon: -80.85, tags: { name: 'Station B', amenity: 'fuel' } },
     ];
 
-    mockFetch.mockResolvedValueOnce(overpassResponse(stations));
+    setupFetchMock(stations);
 
     await renderMap();
 
@@ -293,7 +299,15 @@ describe('MapPage', () => {
     const favorites = [
       { id: 'fav-1', name: 'My Shell', address: '100 Main St', createdAt: Date.now() },
     ];
-    document.cookie = `${encodeURIComponent('gotgas:favorites')}=${encodeURIComponent(JSON.stringify(favorites))}; path=/`;
+    mockFetch.mockImplementation((url: string) => {
+      if (typeof url === 'string' && url.includes('localhost:5000/favorites')) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(favorites) });
+      }
+      if (typeof url === 'string' && url.includes('localhost:5000/favorite-groups')) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) });
+      }
+      return Promise.resolve(overpassResponse([]));
+    });
 
     await renderMap();
 
@@ -306,7 +320,15 @@ describe('MapPage', () => {
       { id: 'fav-1', name: 'Station Alpha', address: '1 Alpha St', createdAt: Date.now() },
       { id: 'fav-2', name: 'Station Beta', address: '2 Beta St', createdAt: Date.now() },
     ];
-    document.cookie = `${encodeURIComponent('gotgas:favorites')}=${encodeURIComponent(JSON.stringify(favorites))}; path=/`;
+    mockFetch.mockImplementation((url: string) => {
+      if (typeof url === 'string' && url.includes('localhost:5000/favorites')) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(favorites) });
+      }
+      if (typeof url === 'string' && url.includes('localhost:5000/favorite-groups')) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) });
+      }
+      return Promise.resolve(overpassResponse([]));
+    });
 
     await renderMap();
 

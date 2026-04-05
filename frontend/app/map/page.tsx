@@ -64,8 +64,11 @@ function milesToMeters(miles: number) {
   return Math.round(miles * 1609.344);
 }
 
-const MIN_FUEL_PRICE = 2;
-const MAX_FUEL_PRICE = 3.5;
+const MIN_FUEL_PRICE = 3.00;
+const MAX_FUEL_PRICE = 6.00;
+const FILTER_MIN_PRICE = 3.00;
+const FILTER_MAX_PRICE = 10.00;
+const FUEL_TYPE_OPTIONS = ['Regular', 'Mid-Grade', 'Premium', 'Diesel'];
 
 function randomPriceInRange(min: number, max: number) {
   if (max <= min) {
@@ -76,7 +79,7 @@ function randomPriceInRange(min: number, max: number) {
 }
 
 function generateFuelPrices(): FuelPrices {
-  const regular = randomPriceInRange(MIN_FUEL_PRICE, 3.05);
+  const regular = randomPriceInRange(MIN_FUEL_PRICE, 4.50);
 
   const midFloor = Math.min(MAX_FUEL_PRICE, regular + 0.12);
   const midCeiling = Math.min(MAX_FUEL_PRICE, regular + 0.42);
@@ -96,6 +99,15 @@ function generateFuelPrices(): FuelPrices {
     premium,
     diesel,
   };
+}
+
+function getSelectedFuelPrice(station: StationFeature, fuelType: string): number {
+  switch (fuelType) {
+    case 'Mid-Grade': return station.fuelPrices.midGrade;
+    case 'Premium': return station.fuelPrices.premium;
+    case 'Diesel': return station.fuelPrices.diesel;
+    default: return station.fuelPrices.regular;
+  }
 }
 
 function buildPlaceLabel(tags: Record<string, string> | undefined) {
@@ -152,33 +164,19 @@ function extractUniqueBrands(stations: StationFeature[]) {
   });
   return Array.from(brands).sort();
 }
-function extractUniqueFuelTypes(stations: StationFeature[]): string[] {
-  const fuelTypes = new Set<string>();
-  stations.forEach((station) => {
-    const types = getAvailableFuelTypes(station.properties?.tags);
-    types.forEach((type) => fuelTypes.add(type));
-  });
-  return Array.from(fuelTypes).sort();
-}
 function filterStations(stations: StationFeature[], filters: Filters): StationFeature[] {
   return stations.filter((station) => {
     const tags = station.properties?.tags;
     const brand = tags?.brand || tags?.operator || '';
-    const fuelTypes = getAvailableFuelTypes(tags);
-    const regularPrice = station.fuelPrices.regular;
+    const price = getSelectedFuelPrice(station, filters.fuelType);
 
     // Filter by brand
     if (filters.stationBrand && filters.stationBrand !== 'all') {
       if (brand !== filters.stationBrand) return false;
     }
 
-    // Filter by fuel type
-    if (filters.fuelType && filters.fuelType !== 'all') {
-      if (!fuelTypes.includes(filters.fuelType)) return false;
-    }
-
-    // Filter by price range
-    if (regularPrice < filters.priceRange.min || regularPrice > filters.priceRange.max) {
+    // Filter by price range (uses the selected fuel type's price)
+    if (price < filters.priceRange.min || price > filters.priceRange.max) {
       return false;
     }
 
@@ -252,9 +250,8 @@ export default function MapPage() {
   const [radiusMiles, setRadiusMiles] = useState(DEFAULT_SEARCH_RADIUS_MILES);
   const [searchError, setSearchError] = useState('');
   const [searchingLocation, setSearchingLocation] = useState(false);
-  const [filters, setFilters] = useState<Filters>({stationBrand: 'all', fuelType: 'all',priceRange: { min: MIN_FUEL_PRICE, max: MAX_FUEL_PRICE }, });
+  const [filters, setFilters] = useState<Filters>({stationBrand: 'all', fuelType: 'all',priceRange: { min: FILTER_MIN_PRICE, max: FILTER_MAX_PRICE }, });
   const [availableBrands, setAvailableBrands] = useState<string[]>([]);
-  const [availableFuelTypes, setAvailableFuelTypes] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<any>(null);
@@ -282,7 +279,6 @@ export default function MapPage() {
   const filtered = filterStations(allStations, filters);
   setFilteredStations(filtered);
   setAvailableBrands(extractUniqueBrands(allStations));
-  setAvailableFuelTypes(extractUniqueFuelTypes(allStations));
   }, [allStations, filters]);
 
   useEffect(() => {
@@ -709,7 +705,7 @@ export default function MapPage() {
     setFilters({
       stationBrand: 'all',
       fuelType: 'all',
-      priceRange: { min: MIN_FUEL_PRICE, max: MAX_FUEL_PRICE },
+      priceRange: { min: FILTER_MIN_PRICE, max: FILTER_MAX_PRICE },
     });
   };
 
@@ -878,7 +874,7 @@ export default function MapPage() {
               }}
             >
               <option value="all">All Fuel Types</option>
-              {availableFuelTypes.map((fuelType) => (
+              {FUEL_TYPE_OPTIONS.map((fuelType) => (
                 <option key={fuelType} value={fuelType}>
                   {fuelType}
                 </option>
@@ -889,13 +885,13 @@ export default function MapPage() {
           {/* Price Range Filter */}
           <div style={{ flex: '1 1 280px' }}>
             <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: 500 }}>
-              Regular Price Range: ${filters.priceRange.min.toFixed(2)} - ${filters.priceRange.max.toFixed(2)}
+              {filters.fuelType === 'all' ? 'Price Range' : `${filters.fuelType} Price Range`}: ${filters.priceRange.min.toFixed(2)} - ${filters.priceRange.max.toFixed(2)}
             </label>
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
               <input
                 type="range"
-                min={MIN_FUEL_PRICE}
-                max={MAX_FUEL_PRICE}
+                min={FILTER_MIN_PRICE}
+                max={FILTER_MAX_PRICE}
                 step={0.01}
                 value={filters.priceRange.min}
                 onChange={onPriceMinChange}
@@ -904,8 +900,8 @@ export default function MapPage() {
               <span style={{ fontSize: '0.8rem' }}>to</span>
               <input
                 type="range"
-                min={MIN_FUEL_PRICE}
-                max={MAX_FUEL_PRICE}
+                min={FILTER_MIN_PRICE}
+                max={FILTER_MAX_PRICE}
                 step={0.01}
                 value={filters.priceRange.max}
                 onChange={onPriceMaxChange}
