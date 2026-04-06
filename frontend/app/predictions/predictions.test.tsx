@@ -39,6 +39,8 @@ describe("predictGasPrice", () => {
     expect(result).not.toBeNull();
     expect(typeof result!.predictedPrice).toBe("number");
     expect(typeof result!.predictedWeek).toBe("string");
+    expect(Array.isArray(result!.futurePredictions)).toBe(true);
+    expect(result!.futurePredictions.length).toBe(4);
   });
 
   it("returns confidence between 0 and 100", () => {
@@ -69,6 +71,29 @@ describe("predictGasPrice", () => {
     const predicted = new Date(result!.predictedWeek);
     const diffDays = (predicted.getTime() - lastWeek.getTime()) / (1000 * 60 * 60 * 24);
     expect(diffDays).toBe(7);
+  });
+
+  it("returns 4 future weekly predictions spaced by 7 days", () => {
+    const result = predictGasPrice("CA");
+    expect(result).not.toBeNull();
+
+    const future = result!.futurePredictions;
+    expect(future.length).toBe(4);
+
+    const lastHistorical = new Date(
+      mockGasPriceData["CA"][mockGasPriceData["CA"].length - 1].week
+    );
+    const firstFuture = new Date(future[0].week);
+    const firstDiffDays =
+      (firstFuture.getTime() - lastHistorical.getTime()) / (1000 * 60 * 60 * 24);
+    expect(firstDiffDays).toBe(7);
+
+    for (let index = 1; index < future.length; index++) {
+      const prev = new Date(future[index - 1].week);
+      const curr = new Date(future[index].week);
+      const diffDays = (curr.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24);
+      expect(diffDays).toBe(7);
+    }
   });
 });
 

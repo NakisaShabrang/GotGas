@@ -6,6 +6,7 @@ export type PredictionResult = {
   confidenceLabel: string;
   historicalData: WeeklyPrice[];
   predictedWeek: string;
+  futurePredictions: WeeklyPrice[];
 };
 
 // Linear regression on price data. Returns slope, intercept, and R-squared.
@@ -61,9 +62,28 @@ function getConfidenceLabel(confidence: number): string {
 
 // Add 7 days to a date string (YYYY-MM-DD)
 function addOneWeek(dateStr: string): string {
-  const date = new Date(dateStr);
-  date.setDate(date.getDate() + 7);
+  const date = new Date(`${dateStr}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + 7);
   return date.toISOString().split("T")[0];
+}
+
+function buildFuturePredictions(
+  lastWeek: string,
+  slope: number,
+  intercept: number,
+  historicalLength: number,
+  weeksToForecast = 4
+): WeeklyPrice[] {
+  return Array.from({ length: weeksToForecast }, (_, index) => {
+    const dataIndex = historicalLength + index;
+    const week = Array.from({ length: index + 1 }).reduce(
+      (date) => addOneWeek(date),
+      lastWeek
+    );
+    const price = Number((slope * dataIndex + intercept).toFixed(2));
+
+    return { week, price };
+  });
 }
 
 export function predictGasPrice(
@@ -77,16 +97,20 @@ export function predictGasPrice(
   const prices = data.map((d) => d.price);
   const { slope, intercept, rSquared } = linearRegression(prices);
 
-  // Predict next week (index = data.length)
-  const predictedPrice = Number(
-    (slope * data.length + intercept).toFixed(2)
+  const lastWeek = data[data.length - 1].week;
+  const futurePredictions = buildFuturePredictions(
+    lastWeek,
+    slope,
+    intercept,
+    data.length
   );
+
+  const predictedPrice = futurePredictions[0].price;
 
   // Convert R-squared to a 0-100 confidence percentage
   const confidence = Math.round(Math.max(0, Math.min(100, rSquared * 100)));
 
-  const lastWeek = data[data.length - 1].week;
-  const predictedWeek = addOneWeek(lastWeek);
+  const predictedWeek = futurePredictions[0].week;
 
   return {
     predictedPrice,
@@ -94,5 +118,6 @@ export function predictGasPrice(
     confidenceLabel: getConfidenceLabel(confidence),
     historicalData: data,
     predictedWeek,
+    futurePredictions,
   };
 }

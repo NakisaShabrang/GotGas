@@ -60,12 +60,12 @@ export default function PredictionsPage() {
 
     const labels = [
       ...result.historicalData.map((d) => d.week),
-      result.predictedWeek,
+      ...result.futurePredictions.map((d) => d.week),
     ];
     const historicalPrices = result.historicalData.map((d) => d.price);
     const predictionData = new Array(historicalPrices.length - 1).fill(null);
     predictionData.push(historicalPrices[historicalPrices.length - 1]);
-    predictionData.push(result.predictedPrice);
+    predictionData.push(...result.futurePredictions.map((d) => d.price));
 
     chartRef.current = new Chart(canvasRef.current, {
       type: "line",
@@ -74,7 +74,7 @@ export default function PredictionsPage() {
         datasets: [
           {
             label: "Historical Price ($/gal)",
-            data: [...historicalPrices, null],
+            data: [...historicalPrices, ...new Array(result.futurePredictions.length).fill(null)],
             borderColor: "#2563eb",
             backgroundColor: "#2563eb",
             tension: 0.2,
@@ -268,8 +268,8 @@ export default function PredictionsPage() {
           >
             <p style={{ margin: 0 }}>
               This chart shows the historical weekly average gas price for{" "}
-              <strong>{stateName}</strong> over the past 8 weeks, along with a
-              predicted price for next week. The prediction uses linear
+              <strong>{stateName}</strong> over the past 9 weeks, along with
+              predicted prices for the next 4 weeks. The prediction uses linear
               regression on the historical trend. Use the dropdown above to
               select a different state. The confidence indicator shows how well
               the historical data fits a linear trend &mdash; higher confidence
@@ -295,8 +295,8 @@ export default function PredictionsPage() {
             Select a state from the dropdown above to view gas price predictions.
           </p>
           <p style={{ margin: "0.5rem 0 0", fontSize: "0.9rem" }}>
-            The chart will show historical price trends and a predicted price for
-            next week.
+            The chart will show historical price trends and predicted prices for
+            the next 4 weeks.
           </p>
         </div>
       )}

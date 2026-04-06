@@ -60,7 +60,7 @@ export const ALL_STATES: { code: string; name: string }[] = [
   { code: "WY", name: "Wyoming" },
 ];
 
-// Mock historical gas price data (past 8 weeks) for a subset of states.
+// Mock historical gas price data (past 9 weeks) for a subset of states.
 // States not listed here will trigger the "data unavailable" error.
 export const mockGasPriceData: StatePriceData = {
   CA: [
@@ -72,6 +72,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 5.05 },
     { week: "2026-03-23", price: 5.10 },
     { week: "2026-03-30", price: 5.12 },
+    { week: "2026-04-06", price: 5.16 },
   ],
   TX: [
     { week: "2026-02-09", price: 2.75 },
@@ -82,6 +83,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 2.85 },
     { week: "2026-03-23", price: 2.88 },
     { week: "2026-03-30", price: 2.90 },
+    { week: "2026-04-06", price: 2.94 },
   ],
   NY: [
     { week: "2026-02-09", price: 3.45 },
@@ -92,6 +94,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 3.58 },
     { week: "2026-03-23", price: 3.65 },
     { week: "2026-03-30", price: 3.68 },
+    { week: "2026-04-06", price: 3.72 },
   ],
   FL: [
     { week: "2026-02-09", price: 3.10 },
@@ -102,6 +105,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 3.20 },
     { week: "2026-03-23", price: 3.25 },
     { week: "2026-03-30", price: 3.28 },
+    { week: "2026-04-06", price: 3.32 },
   ],
   IL: [
     { week: "2026-02-09", price: 3.30 },
@@ -112,6 +116,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 3.45 },
     { week: "2026-03-23", price: 3.50 },
     { week: "2026-03-30", price: 3.52 },
+    { week: "2026-04-06", price: 3.56 },
   ],
   PA: [
     { week: "2026-02-09", price: 3.20 },
@@ -122,6 +127,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 3.35 },
     { week: "2026-03-23", price: 3.38 },
     { week: "2026-03-30", price: 3.40 },
+    { week: "2026-04-06", price: 3.44 },
   ],
   OH: [
     { week: "2026-02-09", price: 2.95 },
@@ -132,6 +138,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 3.05 },
     { week: "2026-03-23", price: 3.08 },
     { week: "2026-03-30", price: 3.10 },
+    { week: "2026-04-06", price: 3.14 },
   ],
   GA: [
     { week: "2026-02-09", price: 2.85 },
@@ -142,6 +149,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 2.98 },
     { week: "2026-03-23", price: 3.00 },
     { week: "2026-03-30", price: 3.02 },
+    { week: "2026-04-06", price: 3.06 },
   ],
   NC: [
     { week: "2026-02-09", price: 2.90 },
@@ -152,6 +160,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 3.02 },
     { week: "2026-03-23", price: 3.05 },
     { week: "2026-03-30", price: 3.08 },
+    { week: "2026-04-06", price: 3.12 },
   ],
   WA: [
     { week: "2026-02-09", price: 4.10 },
@@ -162,6 +171,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 4.22 },
     { week: "2026-03-23", price: 4.30 },
     { week: "2026-03-30", price: 4.35 },
+    { week: "2026-04-06", price: 4.40 },
   ],
   NJ: [
     { week: "2026-02-09", price: 3.15 },
@@ -172,6 +182,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 3.28 },
     { week: "2026-03-23", price: 3.30 },
     { week: "2026-03-30", price: 3.32 },
+    { week: "2026-04-06", price: 3.36 },
   ],
   VA: [
     { week: "2026-02-09", price: 2.95 },
@@ -182,6 +193,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 3.08 },
     { week: "2026-03-23", price: 3.10 },
     { week: "2026-03-30", price: 3.12 },
+    { week: "2026-04-06", price: 3.16 },
   ],
   MI: [
     { week: "2026-02-09", price: 3.05 },
@@ -192,6 +204,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 3.18 },
     { week: "2026-03-23", price: 3.20 },
     { week: "2026-03-30", price: 3.22 },
+    { week: "2026-04-06", price: 3.26 },
   ],
   CO: [
     { week: "2026-02-09", price: 3.00 },
@@ -202,6 +215,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 3.15 },
     { week: "2026-03-23", price: 3.18 },
     { week: "2026-03-30", price: 3.20 },
+    { week: "2026-04-06", price: 3.24 },
   ],
   AZ: [
     { week: "2026-02-09", price: 3.25 },
@@ -212,6 +226,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 3.40 },
     { week: "2026-03-23", price: 3.42 },
     { week: "2026-03-30", price: 3.45 },
+    { week: "2026-04-06", price: 3.49 },
   ],
   AL: [
     { week: "2026-02-09", price: 2.80 },
@@ -222,6 +237,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 2.90 },
     { week: "2026-03-23", price: 2.92 },
     { week: "2026-03-30", price: 2.95 },
+    { week: "2026-04-06", price: 2.99 },
   ],
   AK: [
     { week: "2026-02-09", price: 4.20 },
@@ -232,6 +248,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 4.30 },
     { week: "2026-03-23", price: 4.35 },
     { week: "2026-03-30", price: 4.38 },
+    { week: "2026-04-06", price: 4.42 },
   ],
   AR: [
     { week: "2026-02-09", price: 2.75 },
@@ -242,6 +259,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 2.85 },
     { week: "2026-03-23", price: 2.88 },
     { week: "2026-03-30", price: 2.90 },
+    { week: "2026-04-06", price: 2.94 },
   ],
   CT: [
     { week: "2026-02-09", price: 3.65 },
@@ -252,6 +270,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 3.78 },
     { week: "2026-03-23", price: 3.80 },
     { week: "2026-03-30", price: 3.82 },
+    { week: "2026-04-06", price: 3.86 },
   ],
   DE: [
     { week: "2026-02-09", price: 3.10 },
@@ -262,6 +281,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 3.20 },
     { week: "2026-03-23", price: 3.22 },
     { week: "2026-03-30", price: 3.25 },
+    { week: "2026-04-06", price: 3.29 },
   ],
   HI: [
     { week: "2026-02-09", price: 4.60 },
@@ -272,6 +292,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 4.75 },
     { week: "2026-03-23", price: 4.78 },
     { week: "2026-03-30", price: 4.80 },
+    { week: "2026-04-06", price: 4.84 },
   ],
   ID: [
     { week: "2026-02-09", price: 3.20 },
@@ -282,6 +303,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 3.32 },
     { week: "2026-03-23", price: 3.35 },
     { week: "2026-03-30", price: 3.38 },
+    { week: "2026-04-06", price: 3.42 },
   ],
   IN: [
     { week: "2026-02-09", price: 3.05 },
@@ -292,6 +314,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 3.15 },
     { week: "2026-03-23", price: 3.18 },
     { week: "2026-03-30", price: 3.20 },
+    { week: "2026-04-06", price: 3.24 },
   ],
   IA: [
     { week: "2026-02-09", price: 3.00 },
@@ -302,6 +325,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 3.10 },
     { week: "2026-03-23", price: 3.12 },
     { week: "2026-03-30", price: 3.15 },
+    { week: "2026-04-06", price: 3.19 },
   ],
   KS: [
     { week: "2026-02-09", price: 2.72 },
@@ -312,6 +336,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 2.82 },
     { week: "2026-03-23", price: 2.85 },
     { week: "2026-03-30", price: 2.88 },
+    { week: "2026-04-06", price: 2.92 },
   ],
   KY: [
     { week: "2026-02-09", price: 2.98 },
@@ -322,6 +347,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 3.08 },
     { week: "2026-03-23", price: 3.10 },
     { week: "2026-03-30", price: 3.12 },
+    { week: "2026-04-06", price: 3.16 },
   ],
   LA: [
     { week: "2026-02-09", price: 2.70 },
@@ -332,6 +358,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 2.80 },
     { week: "2026-03-23", price: 2.82 },
     { week: "2026-03-30", price: 2.85 },
+    { week: "2026-04-06", price: 2.89 },
   ],
   ME: [
     { week: "2026-02-09", price: 3.45 },
@@ -342,6 +369,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 3.58 },
     { week: "2026-03-23", price: 3.55 },
     { week: "2026-03-30", price: 3.60 },
+    { week: "2026-04-06", price: 3.64 },
   ],
   MD: [
     { week: "2026-02-09", price: 3.40 },
@@ -352,6 +380,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 3.52 },
     { week: "2026-03-23", price: 3.55 },
     { week: "2026-03-30", price: 3.58 },
+    { week: "2026-04-06", price: 3.62 },
   ],
   MA: [
     { week: "2026-02-09", price: 3.55 },
@@ -362,6 +391,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 3.68 },
     { week: "2026-03-23", price: 3.70 },
     { week: "2026-03-30", price: 3.72 },
+    { week: "2026-04-06", price: 3.76 },
   ],
   MN: [
     { week: "2026-02-09", price: 3.25 },
@@ -372,6 +402,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 3.35 },
     { week: "2026-03-23", price: 3.38 },
     { week: "2026-03-30", price: 3.40 },
+    { week: "2026-04-06", price: 3.44 },
   ],
   MS: [
     { week: "2026-02-09", price: 2.65 },
@@ -382,6 +413,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 2.78 },
     { week: "2026-03-23", price: 2.80 },
     { week: "2026-03-30", price: 2.82 },
+    { week: "2026-04-06", price: 2.86 },
   ],
   MO: [
     { week: "2026-02-09", price: 2.95 },
@@ -392,6 +424,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 3.05 },
     { week: "2026-03-23", price: 3.08 },
     { week: "2026-03-30", price: 3.10 },
+    { week: "2026-04-06", price: 3.14 },
   ],
   MT: [
     { week: "2026-02-09", price: 3.00 },
@@ -402,6 +435,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 3.12 },
     { week: "2026-03-23", price: 3.15 },
     { week: "2026-03-30", price: 3.18 },
+    { week: "2026-04-06", price: 3.22 },
   ],
   NE: [
     { week: "2026-02-09", price: 2.95 },
@@ -412,6 +446,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 3.05 },
     { week: "2026-03-23", price: 3.08 },
     { week: "2026-03-30", price: 3.10 },
+    { week: "2026-04-06", price: 3.14 },
   ],
   NV: [
     { week: "2026-02-09", price: 3.95 },
@@ -422,6 +457,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 4.08 },
     { week: "2026-03-23", price: 4.10 },
     { week: "2026-03-30", price: 4.15 },
+    { week: "2026-04-06", price: 4.19 },
   ],
   NH: [
     { week: "2026-02-09", price: 3.35 },
@@ -432,6 +468,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 3.48 },
     { week: "2026-03-23", price: 3.50 },
     { week: "2026-03-30", price: 3.52 },
+    { week: "2026-04-06", price: 3.56 },
   ],
   NM: [
     { week: "2026-02-09", price: 3.30 },
@@ -442,6 +479,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 3.42 },
     { week: "2026-03-23", price: 3.45 },
     { week: "2026-03-30", price: 3.48 },
+    { week: "2026-04-06", price: 3.52 },
   ],
   OK: [
     { week: "2026-02-09", price: 2.60 },
@@ -452,6 +490,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 2.70 },
     { week: "2026-03-23", price: 2.72 },
     { week: "2026-03-30", price: 2.75 },
+    { week: "2026-04-06", price: 2.79 },
   ],
   OR: [
     { week: "2026-02-09", price: 3.90 },
@@ -462,6 +501,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 4.02 },
     { week: "2026-03-23", price: 4.05 },
     { week: "2026-03-30", price: 4.08 },
+    { week: "2026-04-06", price: 4.12 },
   ],
   RI: [
     { week: "2026-02-09", price: 3.50 },
@@ -472,6 +512,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 3.62 },
     { week: "2026-03-23", price: 3.65 },
     { week: "2026-03-30", price: 3.68 },
+    { week: "2026-04-06", price: 3.72 },
   ],
   SC: [
     { week: "2026-02-09", price: 2.78 },
@@ -482,6 +523,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 2.90 },
     { week: "2026-03-23", price: 2.92 },
     { week: "2026-03-30", price: 2.95 },
+    { week: "2026-04-06", price: 2.99 },
   ],
   TN: [
     { week: "2026-02-09", price: 2.82 },
@@ -492,6 +534,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 2.95 },
     { week: "2026-03-23", price: 2.98 },
     { week: "2026-03-30", price: 3.00 },
+    { week: "2026-04-06", price: 3.04 },
   ],
   UT: [
     { week: "2026-02-09", price: 3.15 },
@@ -502,6 +545,7 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 3.28 },
     { week: "2026-03-23", price: 3.30 },
     { week: "2026-03-30", price: 3.32 },
+    { week: "2026-04-06", price: 3.36 },
   ],
   WI: [
     { week: "2026-02-09", price: 3.02 },
@@ -512,5 +556,6 @@ export const mockGasPriceData: StatePriceData = {
     { week: "2026-03-16", price: 3.12 },
     { week: "2026-03-23", price: 3.15 },
     { week: "2026-03-30", price: 3.18 },
+    { week: "2026-04-06", price: 3.22 },
   ],
 };
