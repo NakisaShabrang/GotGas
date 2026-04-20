@@ -25,6 +25,7 @@ users_collection = db['users']
 
 # Create index on username for faster lookups, not necessary but I like it
 users_collection.create_index('username', unique=True)
+MAX_FAVORITE_NOTE_LENGTH = 160
 
 @app.route("/")
 def home():
@@ -218,6 +219,30 @@ def update_favorite_name(station_id):
         {"$set": {"name": name}}
     )
     return jsonify({"message": "Name updated"}), 200
+
+@app.route("/favorites/<station_id>/note", methods=["PUT"])
+def update_favorite_note(station_id):
+    if 'user' not in session:
+        return jsonify({"error": "Please log in first"}), 401
+    data = request.get_json()
+    note = data.get("note", "").strip()
+    if not note or len(note) > MAX_FAVORITE_NOTE_LENGTH:
+        return jsonify({"error": "Invalid note"}), 400
+    favorites_collection.update_one(
+        {"username": session['user'], "id": station_id},
+        {"$set": {"note": note}}
+    )
+    return jsonify({"message": "Note updated"}), 200
+
+@app.route("/favorites/<station_id>/note", methods=["DELETE"])
+def delete_favorite_note(station_id):
+    if 'user' not in session:
+        return jsonify({"error": "Please log in first"}), 401
+    favorites_collection.update_one(
+        {"username": session['user'], "id": station_id},
+        {"$unset": {"note": ""}}
+    )
+    return jsonify({"message": "Note deleted"}), 200
 
 # --------------- Favorite Groups API ---------------
 
