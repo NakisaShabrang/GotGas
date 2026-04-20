@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import DeleteAccountModal from "@/app/components/DeleteAccountModal";
 
 const API_URL = "http://localhost:5000";
 
@@ -17,6 +18,7 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -60,6 +62,11 @@ export default function ProfilePage() {
     router.push("/login");
   };
 
+  const handleDeleteConfirmed = () => {
+    localStorage.removeItem("user");
+    router.push("/login?message=Account deleted successfully.");
+  };
+
   if (loading) {
     return (
       <div style={styles.container}>
@@ -94,6 +101,20 @@ export default function ProfilePage() {
         <button onClick={handleLogout} style={styles.logoutBtn}>
           Log Out
         </button>
+
+        <button
+          onClick={() => setShowDeleteModal(true)}
+          style={styles.deleteBtn}
+        >
+          Delete Account
+        </button>
+
+        {showDeleteModal && (
+          <DeleteAccountModal
+            onClose={() => setShowDeleteModal(false)}
+            onConfirm={handleDeleteConfirmed}
+          />
+        )}
       </div>
     </div>
   );
@@ -183,6 +204,17 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: "#dc2626",
     color: "#ffffff",
     border: "none",
+    borderRadius: "6px",
+    cursor: "pointer",
+  },
+  deleteBtn: {
+    marginLeft: "12px",
+    padding: "10px 32px",
+    fontSize: "0.95rem",
+    fontWeight: 600,
+    backgroundColor: "#ef4444",
+    color: "#ffffff",
+    border: "1px solid #dc2626",
     borderRadius: "6px",
     cursor: "pointer",
   },
