@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, session
+from flask import Flask, jsonify, request, session, make_response
 from flask_cors import CORS
 from pymongo import MongoClient
 import bcrypt
@@ -15,6 +15,23 @@ app.secret_key = os.getenv('SECRET_KEY', 'secret')
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_SECURE'] = False
 app.permanent_session_lifetime = timedelta(days=7)
+
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        response = make_response()
+        response.status_code = 200
+        return response
+
+@app.after_request
+def apply_cors(response):
+    origin = request.headers.get("Origin")
+    if origin == "http://localhost:3000":
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, PUT, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    return response
 
 # MongoDB connection - IMPORTANT: Remove the default fallback
 MONGODB_URI = os.getenv('MONGODB_URI')
@@ -296,6 +313,59 @@ def remove_station_from_group(group_id, station_id):
         {"$pull": {"stationIds": station_id}}
     )
     return jsonify({"message": "Station removed from group"}), 200
+
+@app.route("/profile/email", methods=["PATCH"])
+def update_email():
+    if 'user' not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = request.get_json()
+    new_email = data.get("email", "").strip()
+
+    if not new_email:
+        return jsonify({"message": "Email cannot be empty"}), 400
+
+    existing = users_collection.find_one({"email": new_email})
+    if existing and existing["username"] != session["user"]:
+        return jsonify({"message": "Email already in use"}), 409
+
+    users_collection.update_one(
+        {"username": session["user"]},
+        {"$set": {"email": new_email}}
+    )
+    return jsonify({"message": "Email updated successfully"}), 200
+
+@app.route("/profile/password", methods=["PATCH"])
+def update_password():
+    if 'user' not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = request.get_json()
+    current_password = data.get("currentPassword", "")
+    new_password = data.get("newPassword", "")
+
+    if not current_password or not new_password:
+        return jsonify({"error": "Both fields are required"}), 400
+
+    if len(new_password) < 6:
+        return jsonify({"error": "Password must be at least 6 characters"}), 400
+
+    user = users_collection.find_one({"username": session['user']})
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    if not bcrypt.checkpw(current_password.encode('utf-8'), user["password"]):
+        return jsonify({"error": "Current password is incorrect"}), 401
+
+    if bcrypt.checkpw(new_password.encode('utf-8'), user["password"]):
+        return jsonify({"error": "New password must be different from your current password"}), 400
+
+    hashed = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
+    users_collection.update_one(
+        {"username": session['user']},
+        {"$set": {"password": hashed}}
+    )
+    return jsonify({"message": "Password updated successfully"}), 200
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
