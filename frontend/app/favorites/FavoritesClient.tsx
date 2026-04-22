@@ -22,6 +22,7 @@ import {
   updateFavoriteNote,
   updateFavoriteName,
 } from "@/app/lib/favorites";
+import { getVisitedStations, toggleVisitedStation } from '@/app/lib/visited';
 
 const cardStyle = {
   border: "1px solid rgba(128,128,128,0.3)",
@@ -85,6 +86,7 @@ export default function FavoritesClient() {
       const [favs, grps] = await Promise.all([loadFavorites(), loadFavoriteGroups()]);
       setFavorites(favs);
       setGroups(grps);
+      setVisitedStations(getVisitedStations());
       setLoading(false);
     }
     fetchData();
@@ -502,6 +504,44 @@ export default function FavoritesClient() {
         </div>
 
         {!hasFavorites && <p style={{ margin: 0 }}>You have no favorites yet.</p>}
+          {visitedStations.length > 0 && (
+            <>
+              <h2 style={{ marginTop: 20, marginBottom: 10 }}>Visited Stations</h2>
+
+              <ul style={{ listStyle: "none", padding: 0, display: "grid", gap: 12 }}>
+                {visitedStations.map((station) => (
+                  <li key={station.id} style={{ ...cardStyle }}>
+                    <strong>{station.name}</strong>
+
+                    {station.address && (
+                      <div style={{ marginTop: 4, opacity: 0.8 }}>
+                        {station.address}
+                      </div>
+                    )}
+
+                    <div style={{ marginTop: 6 }}>
+                      <button
+                        onClick={() => {
+                          toggleVisitedStation(station);
+                          setVisitedStations(getVisitedStations());
+                        }}
+                        style={{
+                          background: "#2563eb",
+                          color: "white",
+                          padding: "6px 10px",
+                          borderRadius: 6,
+                          border: "none",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Remove from Visited
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
 
         {hasFavorites && (
           <ul style={{ listStyle: "none", padding: 0, display: "grid", gap: 12, margin: 0 }}>
