@@ -6,7 +6,7 @@ import './login.css';
 import Link from 'next/dist/client/link';
 import link from 'next/link';
 
-const API_URL = 'http://localhost:5000';
+const API_URL = 'http://127.0.0.1:5000';
 
 export default function LoginPage() {
   const [username, setUsername] = useState('');

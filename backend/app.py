@@ -9,7 +9,7 @@ from datetime import timedelta, datetime
 # Load environment variables
 load_dotenv()  
 app = Flask(__name__)
-CORS(app, supports_credentials=True, origins=["http://localhost:3000"])
+CORS(app, supports_credentials=True, origins=["http://localhost:3000", "http://127.0.0.1:3000"])
 
 app.secret_key = os.getenv('SECRET_KEY', 'secret')
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
