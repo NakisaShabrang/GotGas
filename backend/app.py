@@ -9,7 +9,7 @@ from datetime import timedelta, datetime
 # Load environment variables
 load_dotenv()  
 app = Flask(__name__)
-CORS(app, supports_credentials=True, origins=["http://localhost:3000"])
+CORS(app, supports_credentials=True, origins=["http://localhost:3000", "http://127.0.0.1:3000"])
 
 app.secret_key = os.getenv('SECRET_KEY', 'secret')
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
@@ -159,6 +159,51 @@ def profile():
         "phone": user.get("phone"),
         "memberSince": created_at,
     }), 200
+
+@app.route("/verify-password", methods=["POST"])
+def verify_password():
+    if 'user' not in session:
+        return jsonify({"error": "Please log in first"}), 401
+    
+    data = request.get_json()
+    password = data.get("password")
+    
+    if not password:
+        return jsonify({"error": "Password is required"}), 400
+    
+    user = users_collection.find_one({"username": session['user']})
+    
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    
+    if not bcrypt.checkpw(password.encode('utf-8'), user["password"]):
+        return jsonify({"error": "Invalid password"}), 401
+    
+    return jsonify({"message": "Password verified"}), 200
+
+@app.route("/delete-account", methods=["DELETE"])
+def delete_account():
+    if 'user' not in session:
+        return jsonify({"error": "Please log in first"}), 401
+    
+    username = session['user']
+    
+    # Delete user from users collection
+    result = users_collection.delete_one({"username": username})
+    
+    if result.deleted_count == 0:
+        return jsonify({"error": "User not found"}), 404
+    
+    # Delete all favorites associated with the user
+    favorites_collection.delete_many({"username": username})
+    
+    # Delete all favorite groups associated with the user
+    favorite_groups_collection.delete_many({"username": username})
+    
+    # Clear session
+    session.pop("user", None)
+    
+    return jsonify({"message": "Account deleted successfully"}), 200
 
 # --------------- Favorites API ---------------
 

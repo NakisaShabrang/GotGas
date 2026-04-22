@@ -12,7 +12,7 @@ export type FavoriteGroup = {
   createdAt: number;
 };
 
-const API_URL = "http://localhost:5000";
+const API_URL = "/api";
 export const MAX_FAVORITE_NAME_LENGTH = 40;
 export const MAX_FAVORITE_GROUP_NAME_LENGTH = 40;
 
