@@ -184,7 +184,7 @@ function filterStations(stations: StationFeature[], filters: Filters): StationFe
     return true;
   });
 }
-function buildStationPopupHtml(station: StationFeature, centerLat: number, centerLng: number, isFavorite: boolean) {
+function buildStationPopupHtml(station: StationFeature, centerLat: number, centerLng: number, isFavorite: boolean, isReported: boolean) {
   const tags = station?.properties?.tags as Record<string, string> | undefined;
   const name = station?.text || tags?.name || tags?.brand || 'Gas Station';
   const operator = tags?.operator;
@@ -204,13 +204,21 @@ function buildStationPopupHtml(station: StationFeature, centerLat: number, cente
   }
 
   const details = [
-    `<div style="margin-bottom:8px;">
+    `<div style="margin-bottom:8px;display:flex;gap:6px;flex-wrap:wrap;">
       <button
         type="button"
         data-favorite-id="${escapeHtml(station.id)}"
         style="border:1px solid #d1d5db;border-radius:8px;padding:4px 8px;background:${isFavorite ? '#14532d' : '#ffffff'};color:${isFavorite ? '#ffffff' : '#111111'};cursor:pointer;font-weight:600;"
       >
         ${isFavorite ? '★ Saved' : '☆ Save'}
+      </button>
+      <button
+        type="button"
+        data-report-id="${escapeHtml(station.id)}"
+        ${isReported ? 'disabled' : ''}
+        style="border:1px solid #fca5a5;border-radius:8px;padding:4px 8px;background:${isReported ? '#fee2e2' : '#ffffff'};color:${isReported ? '#991b1b' : '#dc2626'};cursor:${isReported ? 'not-allowed' : 'pointer'};font-weight:600;"
+      >
+        ${isReported ? '✓ Reported' : '⚠ Report Price'}
       </button>
     </div>`,
     station.isCheapest
@@ -266,6 +274,11 @@ const [visitedStations, setVisitedStations] = useState<{ id: string; name: strin
   const favoriteIdsRef = useRef<Set<string>>(new Set());
   const refreshStationsRef = useRef<(lat: number, lng: number) => Promise<void>>(async () => {});
   const searchLocationRef = useRef<(query: string) => Promise<void>>(async () => {});
+  const [reportModalStation, setReportModalStation] = useState<StationFeature | null>(null);
+  const [reportSuggestedPrice, setReportSuggestedPrice] = useState('');
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [reportFeedback, setReportFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const reportedStationIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     async function fetchFavorites() {
@@ -416,7 +429,7 @@ const [visitedStations, setVisitedStations] = useState<{ id: string; name: strin
             if (!coords || coords.length < 2) return;
             const [lng2, lat2] = coords;
             const popup = new mapboxRef.current.Popup({ offset: 8 }).setHTML(
-              buildStationPopupHtml(f, lat, lng, favoriteIdsRef.current.has(f.id))
+              buildStationPopupHtml(f, lat, lng, favoriteIdsRef.current.has(f.id), reportedStationIdsRef.current.has(f.id))
             );
 
             popup.on('open', () => {
@@ -449,6 +462,15 @@ const [visitedStations, setVisitedStations] = useState<{ id: string; name: strin
                   button.style.color = '#ffffff';
                 }
               };
+
+              const reportButton = popupElement?.querySelector(`[data-report-id="${f.id}"]`) as HTMLButtonElement | null;
+              if (reportButton && !reportButton.disabled) {
+                reportButton.onclick = () => {
+                  setReportModalStation(f);
+                  setReportSuggestedPrice('');
+                  setReportFeedback(null);
+                };
+              }
             });
 
             const marker = new mapboxRef.current.Marker({
@@ -598,7 +620,7 @@ const [visitedStations, setVisitedStations] = useState<{ id: string; name: strin
       const [lng2, lat2] = coords;
       
       const popup = new mapboxRef.current.Popup({ offset: 8 }).setHTML(
-        buildStationPopupHtml(f, lat, lng, favoriteIdsRef.current.has(f.id))
+        buildStationPopupHtml(f, lat, lng, favoriteIdsRef.current.has(f.id), reportedStationIdsRef.current.has(f.id))
       );
 
       popup.on('open', () => {
@@ -631,6 +653,15 @@ const [visitedStations, setVisitedStations] = useState<{ id: string; name: strin
             button.style.color = '#ffffff';
           }
         };
+
+        const reportButton = popupElement?.querySelector(`[data-report-id="${f.id}"]`) as HTMLButtonElement | null;
+        if (reportButton && !reportButton.disabled) {
+          reportButton.onclick = () => {
+            setReportModalStation(f);
+            setReportSuggestedPrice('');
+            setReportFeedback(null);
+          };
+        }
       });
 
       const marker = new mapboxRef.current.Marker({
@@ -714,6 +745,41 @@ const [visitedStations, setVisitedStations] = useState<{ id: string; name: strin
       fuelType: 'all',
       priceRange: { min: FILTER_MIN_PRICE, max: FILTER_MAX_PRICE },
     });
+  };
+
+  const submitReport = async () => {
+    if (!reportModalStation) return;
+    setReportSubmitting(true);
+    setReportFeedback(null);
+    try {
+      const res = await fetch('/api/report-station', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          station_id: reportModalStation.id,
+          station_name: reportModalStation.text,
+          suggested_price: reportSuggestedPrice.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        reportedStationIdsRef.current.add(reportModalStation.id);
+        const msg = data.under_review
+          ? 'Report submitted. This station has been flagged for review.'
+          : 'Report submitted successfully.';
+        setReportFeedback({ type: 'success', message: msg });
+        setTimeout(() => setReportModalStation(null), 2000);
+      } else if (res.status === 401) {
+        setReportFeedback({ type: 'error', message: 'You must be logged in to report a station.' });
+      } else {
+        setReportFeedback({ type: 'error', message: data.error || 'Failed to submit report.' });
+      }
+    } catch {
+      setReportFeedback({ type: 'error', message: 'Network error. Please try again.' });
+    } finally {
+      setReportSubmitting(false);
+    }
   };
 
   return (
@@ -1060,6 +1126,115 @@ const [visitedStations, setVisitedStations] = useState<{ id: string; name: strin
           </ul>
         </div>
       </div>
+
+      {reportModalStation && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="report-modal-title"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.55)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <div
+            style={{
+              background: 'var(--background)',
+              color: 'var(--foreground)',
+              borderRadius: 12,
+              padding: '1.5rem',
+              maxWidth: 420,
+              width: '90%',
+              border: '1px solid #ccc',
+              boxShadow: '0 4px 24px rgba(0,0,0,0.18)',
+            }}
+          >
+            <h3 id="report-modal-title" style={{ margin: '0 0 0.5rem', fontSize: '1.1rem' }}>
+              ⚠ Report Incorrect Price
+            </h3>
+            <p style={{ margin: '0 0 1rem', fontSize: '0.9rem', opacity: 0.85 }}>
+              Station: <strong>{reportModalStation.text}</strong>
+            </p>
+            <label
+              htmlFor="report-price-input"
+              style={{ display: 'block', marginBottom: '0.35rem', fontSize: '0.9rem', fontWeight: 500 }}
+            >
+              What do you think the correct price is? (optional)
+            </label>
+            <input
+              id="report-price-input"
+              type="number"
+              step="0.01"
+              min="0.01"
+              max="20"
+              placeholder="e.g. 3.49"
+              value={reportSuggestedPrice}
+              onChange={(e) => setReportSuggestedPrice(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '0.5rem 0.6rem',
+                border: '1px solid #ccc',
+                borderRadius: 6,
+                marginBottom: '1rem',
+                boxSizing: 'border-box',
+                backgroundColor: 'var(--background)',
+                color: 'var(--foreground)',
+              }}
+            />
+            {reportFeedback && (
+              <p
+                style={{
+                  margin: '0 0 1rem',
+                  color: reportFeedback.type === 'success' ? '#166534' : '#991b1b',
+                  fontSize: '0.9rem',
+                  fontWeight: 500,
+                }}
+              >
+                {reportFeedback.message}
+              </p>
+            )}
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setReportModalStation(null)}
+                disabled={reportSubmitting}
+                style={{
+                  padding: '0.5rem 1rem',
+                  border: '1px solid #ccc',
+                  borderRadius: 8,
+                  cursor: 'pointer',
+                  backgroundColor: 'var(--background)',
+                  color: 'var(--foreground)',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={submitReport}
+                disabled={reportSubmitting}
+                style={{
+                  padding: '0.5rem 1rem',
+                  border: 'none',
+                  borderRadius: 8,
+                  background: '#dc2626',
+                  color: '#fff',
+                  cursor: reportSubmitting ? 'not-allowed' : 'pointer',
+                  fontWeight: 600,
+                  opacity: reportSubmitting ? 0.7 : 1,
+                }}
+              >
+                {reportSubmitting ? 'Submitting...' : 'Submit Report'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
