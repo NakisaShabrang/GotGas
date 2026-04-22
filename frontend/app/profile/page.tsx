@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import DeleteAccountModal from "@/app/components/DeleteAccountModal";
 
-const API_URL = "http://127.0.0.1:5000";
+const API_URL = "/api";
 
 interface ProfileData {
   username: string;

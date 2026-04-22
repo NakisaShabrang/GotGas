@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import './register.css';
 
-const API_URL = 'http://127.0.0.1:5000';
+const API_URL = '/api';
 
 export default function RegisterPage() {
   const [username, setUsername] = useState('');

@@ -25,7 +25,7 @@ export default function DeleteAccountModal({
     setLoading(true);
 
     try {
-      const response = await fetch("http://localhost:5000/verify-password", {
+      const response = await fetch("/api/verify-password", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -54,7 +54,7 @@ export default function DeleteAccountModal({
     setLoading(true);
 
     try {
-      const response = await fetch("http://localhost:5000/delete-account", {
+      const response = await fetch("/api/delete-account", {
         method: "DELETE",
         credentials: "include",
       });
