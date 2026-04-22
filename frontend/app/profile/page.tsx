@@ -51,14 +51,14 @@ const [passwordSaving, setPasswordSaving] = useState(false);
           router.push("/login?message=Please log in to view your profile.");
           return null;
         }
-        if (!res.ok) throw new Error("Failed to load profile");
+        if (!res.ok) throw new Error(`Server error: ${res.status}`);
         return res.json();
       })
       .then((data) => {
         if (data) setProfile(data);
       })
-      .catch(() => {
-        setError("Unable to load profile. Please try again later.");
+      .catch((err) => {
+        setError(`Unable to load profile: ${err?.message ?? "Unknown error"}. Please try logging out and back in.`);
       })
       .finally(() => setLoading(false));
   }, [router]);
@@ -221,8 +221,19 @@ const handlePasswordSave = async () => {
 
   if (error) {
     return (
-      <div style={styles.container}>
+      <div style={{ ...styles.container, padding: "48px 40px" }}>
         <p style={styles.errorText}>{error}</p>
+        <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
+          <button onClick={handleLogout} style={styles.logoutBtn}>
+            Log Out
+          </button>
+          <button
+            onClick={() => router.push("/login")}
+            style={{ ...styles.logoutBtn, backgroundColor: "#16a34a" }}
+          >
+            Go to Login
+          </button>
+        </div>
       </div>
     );
   }

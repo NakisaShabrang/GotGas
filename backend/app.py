@@ -437,5 +437,84 @@ def update_password():
     )
     return jsonify({"message": "Password updated successfully"}), 200
 
+# --------------- Reports API ---------------
+
+reports_collection = db['reports']
+station_reviews_collection = db['station_reviews']
+REPORTS_THRESHOLD = 5
+
+@app.route("/report-station", methods=["POST"])
+def report_station():
+    if 'user' not in session:
+        return jsonify({"error": "Please log in first"}), 401
+
+    data = request.get_json()
+    station_id = (data.get("station_id") or "").strip()
+    station_name = (data.get("station_name") or "").strip()
+    raw_price = data.get("suggested_price")
+
+    if not station_id:
+        return jsonify({"error": "station_id is required"}), 400
+
+    suggested_price = None
+    if raw_price is not None and str(raw_price).strip() != "":
+        try:
+            price_val = float(str(raw_price).strip())
+            if price_val <= 0 or price_val > 20:
+                return jsonify({"error": "Suggested price must be between $0.01 and $20.00"}), 400
+            suggested_price = round(price_val, 2)
+        except ValueError:
+            return jsonify({"error": "Invalid suggested price"}), 400
+
+    # Duplicate check: a user can only report a station once
+    if reports_collection.find_one({"username": session['user'], "station_id": station_id}):
+        return jsonify({"error": "You have already reported this station"}), 409
+
+    reports_collection.insert_one({
+        "username": session['user'],
+        "station_id": station_id,
+        "station_name": station_name or "Unknown",
+        "suggested_price": suggested_price,
+        "created_at": datetime.utcnow(),
+    })
+
+    report_count = reports_collection.count_documents({"station_id": station_id})
+
+    # When 5 users flag a station, mark it for review
+    if report_count >= REPORTS_THRESHOLD:
+        station_reviews_collection.update_one(
+            {"station_id": station_id},
+            {"$set": {
+                "station_id": station_id,
+                "station_name": station_name or "Unknown",
+                "under_review": True,
+                "report_count": report_count,
+                "flagged_at": datetime.utcnow(),
+            }},
+            upsert=True,
+        )
+
+    return jsonify({
+        "message": "Report submitted successfully",
+        "report_count": report_count,
+        "under_review": report_count >= REPORTS_THRESHOLD,
+    }), 201
+
+@app.route("/report-station/<station_id>", methods=["GET"])
+def get_station_report_status(station_id):
+    if 'user' not in session:
+        return jsonify({"error": "Please log in first"}), 401
+
+    reported = reports_collection.find_one({"username": session['user'], "station_id": station_id}) is not None
+    report_count = reports_collection.count_documents({"station_id": station_id})
+    review = station_reviews_collection.find_one({"station_id": station_id})
+    under_review = bool(review and review.get("under_review", False))
+
+    return jsonify({
+        "reported": reported,
+        "report_count": report_count,
+        "under_review": under_review,
+    }), 200
+
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
