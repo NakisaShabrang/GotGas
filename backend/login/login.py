@@ -1,5 +1,4 @@
-from flask import Flask, jsonify, request, session
-from flask_cors import CORS
+from flask import Flask, jsonify, request, session, make_response
 from pymongo import MongoClient
 import bcrypt
 import os
@@ -9,11 +8,28 @@ from datetime import timedelta
 load_dotenv() #environment variables 
 
 app = Flask(__name__)
-CORS(app, supports_credentials=True)
 app.secret_key = os.getenv("SECRET_KEY", 'SECRET')
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'None'
 app.permanent_session_lifetime = timedelta(days=3)
+
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        response = make_response()
+        response.status_code = 200
+        return response
+
+@app.after_request
+def apply_cors(response):
+    origin = request.headers.get("Origin")
+    if origin == "http://localhost:3000":
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, PUT, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    return response
+
 
 # mongoDB setup
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
@@ -22,7 +38,6 @@ db = client["gotgas"]
 users_collection = db["users"]
 
 users_collection.create_index("username", unique=True)
-
 
 @app.route("/")
 def home():
@@ -108,5 +123,47 @@ def user_info():
     
     return jsonify({"error": "User not found"}), 404
 
+@app.route("/profile/email", methods=["OPTIONS"])
+def profile_email_options():
+    return "", 200
+
+@app.route("/profile/email", methods=["PATCH"])
+def update_email():
+    if 'user' not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = request.get_json()
+    new_email = data.get("email", "").strip()
+
+    if not new_email:
+        return jsonify({"message": "Email cannot be empty"}), 400
+
+    # Check it's not already taken by another user
+    existing = users_collection.find_one({"email": new_email})
+    if existing and existing["username"] != session["user"]:
+        return jsonify({"message": "Email already in use"}), 409
+
+    users_collection.update_one(
+        {"username": session["user"]},
+        {"$set": {"email": new_email}}
+    )
+    return jsonify({"message": "Email updated successfully"}), 200
+
+@app.route("/profile", methods=["GET"])
+def profile():
+    if 'user' not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    user = users_collection.find_one({"username": session["user"]})
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    return jsonify({
+        "username": user.get("username"),
+        "email": user.get("email"),
+        "fullName": user.get("full_name"),
+        "phone": user.get("phone"),
+        "memberSince": str(user.get("created_at")) if user.get("created_at") else None,
+    }), 200
 if __name__ == "__main__":
     app.run(debug=True)
