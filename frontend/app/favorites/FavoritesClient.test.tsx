@@ -7,7 +7,7 @@ const mockFetch = jest.fn();
 global.fetch = mockFetch;
 
 import FavoritesClient from "@/app/favorites/FavoritesClient";
-import { FavoriteStation, FavoriteGroup } from "@/app/lib/favorites";
+import { FavoriteStation, FavoriteGroup, MAX_FAVORITE_NOTE_LENGTH } from "@/app/lib/favorites";
 
 describe("FavoritesClient flows", () => {
   let container: HTMLDivElement;
@@ -50,6 +50,10 @@ describe("FavoritesClient flows", () => {
     return container.querySelector(`input[id^="${prefix}"]`) as HTMLInputElement | null;
   }
 
+  function findTextareaByIdPrefix(prefix: string) {
+    return container.querySelector(`textarea[id^="${prefix}"]`) as HTMLTextAreaElement | null;
+  }
+
   async function clickButton(label: string, index = 0) {
     const button = findButton(label, index);
     expect(button).not.toBeNull();
@@ -61,9 +65,10 @@ describe("FavoritesClient flows", () => {
     });
   }
 
-  async function updateInputValue(input: HTMLInputElement | null, value: string) {
+  async function updateInputValue(input: HTMLInputElement | HTMLTextAreaElement | null, value: string) {
     expect(input).not.toBeNull();
-    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    const prototype = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const setValue = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
     await act(async () => {
       setValue?.call(input, value);
       input!.dispatchEvent(new Event("input", { bubbles: true }));
@@ -185,5 +190,123 @@ describe("FavoritesClient flows", () => {
     await renderClient();
     expect(container.textContent).toContain("Home Route");
     expect(container.textContent).toContain("1 station in this list.");
+  });
+
+  it("adds a note to a favorite", async () => {
+    mockInitialLoad(favorites, emptyGroups);
+    await renderClient();
+
+    mockFetch.mockImplementation((url: string, opts?: RequestInit) => {
+      if (opts?.method === "PUT" && url.endsWith("/favorites/station-1/note")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ message: "Note updated" }) });
+      }
+      if (url.endsWith("/favorites")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve([{ ...favorites[0], note: "Use pump 4" }, favorites[1]]),
+        });
+      }
+      if (url.endsWith("/favorite-groups")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ message: "ok" }) });
+    });
+
+    await clickButton("Add Note");
+    await updateInputValue(findTextareaByIdPrefix("favorite-note-"), "Use pump 4");
+    await clickButton("Save Note");
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining("/favorites/station-1/note"),
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({ note: "Use pump 4" }),
+      })
+    );
+    expect(container.textContent).toContain("Note: Use pump 4");
+  });
+
+  it("edits an existing favorite note", async () => {
+    const favoritesWithNote = [{ ...favorites[0], note: "Old note" }, favorites[1]];
+    mockInitialLoad(favoritesWithNote, emptyGroups);
+    await renderClient();
+
+    mockFetch.mockImplementation((url: string, opts?: RequestInit) => {
+      if (opts?.method === "PUT" && url.endsWith("/favorites/station-1/note")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ message: "Note updated" }) });
+      }
+      if (url.endsWith("/favorites")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve([{ ...favorites[0], note: "New note" }, favorites[1]]),
+        });
+      }
+      if (url.endsWith("/favorite-groups")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ message: "ok" }) });
+    });
+
+    await clickButton("Edit Note");
+    expect(findTextareaByIdPrefix("favorite-note-")?.value).toBe("Old note");
+    await updateInputValue(findTextareaByIdPrefix("favorite-note-"), "New note");
+    await clickButton("Save Note");
+
+    expect(container.textContent).toContain("Note: New note");
+  });
+
+  it("shows note validation when the character limit is exceeded", async () => {
+    mockInitialLoad(favorites, emptyGroups);
+    await renderClient();
+
+    await clickButton("Add Note");
+    await updateInputValue(findTextareaByIdPrefix("favorite-note-"), "A".repeat(MAX_FAVORITE_NOTE_LENGTH + 1));
+    await clickButton("Save Note");
+
+    expect(container.textContent).toContain(`Note must be ${MAX_FAVORITE_NOTE_LENGTH} characters or fewer.`);
+    expect(mockFetch).not.toHaveBeenCalledWith(
+      expect.stringContaining("/favorites/station-1/note"),
+      expect.objectContaining({ method: "PUT" })
+    );
+  });
+
+  it("deletes an existing favorite note", async () => {
+    const favoritesWithNote = [{ ...favorites[0], note: "Diesel lane is faster" }, favorites[1]];
+    mockInitialLoad(favoritesWithNote, emptyGroups);
+    await renderClient();
+
+    mockFetch.mockImplementation((url: string, opts?: RequestInit) => {
+      if (opts?.method === "DELETE" && url.endsWith("/favorites/station-1/note")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ message: "Note deleted" }) });
+      }
+      if (url.endsWith("/favorites")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(favorites) });
+      }
+      if (url.endsWith("/favorite-groups")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ message: "ok" }) });
+    });
+
+    expect(container.textContent).toContain("Note: Diesel lane is faster");
+    await clickButton("Delete Note");
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining("/favorites/station-1/note"),
+      expect.objectContaining({ method: "DELETE" })
+    );
+    expect(container.textContent).not.toContain("Note: Diesel lane is faster");
+  });
+
+  it("shows note actions for stations inside groups", async () => {
+    const groups = [{ id: "group-1", name: "Home Route", stationIds: ["station-1"], createdAt: 10 }];
+    mockInitialLoad(favorites, groups);
+    await renderClient();
+
+    const groupListItem = Array.from(container.querySelectorAll("li")).find((item) =>
+      item.textContent?.includes("Remove from List")
+    );
+
+    expect(groupListItem?.textContent).toContain("Add Note");
   });
 });

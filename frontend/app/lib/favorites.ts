@@ -2,6 +2,7 @@ export type FavoriteStation = {
   id: string;
   name: string;
   address?: string;
+  note?: string;
   createdAt: number;
 };
 
@@ -15,6 +16,7 @@ export type FavoriteGroup = {
 const API_URL = "/api";
 export const MAX_FAVORITE_NAME_LENGTH = 40;
 export const MAX_FAVORITE_GROUP_NAME_LENGTH = 40;
+export const MAX_FAVORITE_NOTE_LENGTH = 160;
 
 export function normalizeFavoriteName(name: string) {
   return name.trim();
@@ -32,6 +34,28 @@ export function normalizeFavoriteGroupName(name: string) {
 export function isValidFavoriteGroupName(name: string) {
   const normalized = normalizeFavoriteGroupName(name);
   return normalized.length > 0 && normalized.length <= MAX_FAVORITE_GROUP_NAME_LENGTH;
+}
+
+export function normalizeFavoriteNote(note: string) {
+  return note.trim();
+}
+
+export function isValidFavoriteNote(note: string) {
+  return normalizeFavoriteNote(note).length <= MAX_FAVORITE_NOTE_LENGTH;
+}
+
+export function getFavoriteNoteError(note: string) {
+  const normalized = normalizeFavoriteNote(note);
+
+  if (normalized.length === 0) {
+    return "Please enter a note.";
+  }
+
+  if (normalized.length > MAX_FAVORITE_NOTE_LENGTH) {
+    return `Note must be ${MAX_FAVORITE_NOTE_LENGTH} characters or fewer.`;
+  }
+
+  return "";
 }
 
 export function getFavoriteGroupNameError(
@@ -111,6 +135,21 @@ export async function updateFavoriteName(id: string, name: string): Promise<Favo
     method: "PUT",
     body: JSON.stringify({ name: normalized }),
   });
+  return loadFavorites();
+}
+
+export async function updateFavoriteNote(id: string, note: string): Promise<FavoriteStation[]> {
+  const normalized = normalizeFavoriteNote(note);
+  if (getFavoriteNoteError(normalized)) return loadFavorites();
+  await apiFetch(`/favorites/${encodeURIComponent(id)}/note`, {
+    method: "PUT",
+    body: JSON.stringify({ note: normalized }),
+  });
+  return loadFavorites();
+}
+
+export async function deleteFavoriteNote(id: string): Promise<FavoriteStation[]> {
+  await apiFetch(`/favorites/${encodeURIComponent(id)}/note`, { method: "DELETE" });
   return loadFavorites();
 }
 
