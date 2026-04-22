@@ -244,6 +244,14 @@ function buildStationPopupHtml(station: StationFeature, centerLat: number, cente
   </div>`;
 }
 
+const OVERPASS_ENDPOINTS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+];
+const STATION_RESULT_LIMIT = 150;
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
 export default function MapPage() {
   const [allStations, setAllStations] = useState<StationFeature[]>([]);
   const [filteredStations, setFilteredStations] = useState<StationFeature[]>([]);  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
@@ -279,6 +287,7 @@ const [visitedStations, setVisitedStations] = useState<{ id: string; name: strin
   const [reportSubmitting, setReportSubmitting] = useState(false);
   const [reportFeedback, setReportFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const reportedStationIdsRef = useRef<Set<string>>(new Set());
+  const stationCacheRef = useRef<Map<string, { timestamp: number; stations: StationFeature[] }>>(new Map());
 
   useEffect(() => {
     async function fetchFavorites() {
@@ -326,6 +335,14 @@ const [visitedStations, setVisitedStations] = useState<{ id: string; name: strin
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
+      const selectedRadiusMiles = radiusMilesRef.current;
+      const cacheKey = `${lat.toFixed(3)}_${lng.toFixed(3)}_${selectedRadiusMiles}`;
+      const cached = stationCacheRef.current.get(cacheKey);
+      if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+        setAllStations(cached.stations);
+        return;
+      }
+
       // Clear previous results immediately
       stationMarkersRef.current.forEach((m) => m.remove());
       stationMarkersRef.current = [];
@@ -335,37 +352,29 @@ const [visitedStations, setVisitedStations] = useState<{ id: string; name: strin
       setLoadingMessage('Searching for gas stations...');
       setSearchError('');
       try {
-        const selectedRadiusMiles = radiusMilesRef.current;
-
         // Use bounding box query — much faster than "around" on Overpass
         const bbox = getBoundingBox(lat, lng, selectedRadiusMiles);
-        const overpassQuery = `[out:json][timeout:10];(node["amenity"="fuel"](${bbox.minLat},${bbox.minLng},${bbox.maxLat},${bbox.maxLng});way["amenity"="fuel"](${bbox.minLat},${bbox.minLng},${bbox.maxLat},${bbox.maxLng}););out center;`;
+        const overpassQuery = `[out:json][timeout:10];(node["amenity"="fuel"](${bbox.minLat},${bbox.minLng},${bbox.maxLat},${bbox.maxLng});way["amenity"="fuel"](${bbox.minLat},${bbox.minLng},${bbox.maxLat},${bbox.maxLng}););out center ${STATION_RESULT_LIMIT};`;
 
-        let res: Response | undefined;
-        let rawBody = '';
-        const maxRetries = 3;
-        for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const fetchFromEndpoint = (url: string) =>
+          fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+            body: `data=${encodeURIComponent(overpassQuery)}`,
+            signal: controller.signal,
+          }).then((r) => {
+            if (!r.ok) throw new Error(`${url} responded with ${r.status}`);
+            return r.text();
+          });
+
+        let rawBody: string;
+        try {
+          rawBody = await Promise.any(OVERPASS_ENDPOINTS.map(fetchFromEndpoint));
+        } catch {
           if (controller.signal.aborted) return;
-          if (attempt > 0) {
-            setLoadingMessage(`Retrying... (attempt ${attempt + 1} of ${maxRetries})`);
-          }
-          try {
-            res = await fetch('https://overpass-api.de/api/interpreter', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
-              body: `data=${encodeURIComponent(overpassQuery)}`,
-              signal: controller.signal,
-            });
-            rawBody = await res.text();
-            if (res.ok) break;
-          } catch (fetchErr: any) {
-            if (fetchErr?.name === 'AbortError') return;
-            if (attempt === maxRetries - 1) throw fetchErr;
-          }
-          await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+          throw new Error('OpenStreetMap is temporarily unavailable. Please try again in a moment.');
         }
         if (controller.signal.aborted) return;
-        if (!res || !res.ok) throw new Error(`OpenStreetMap request failed with status ${res?.status ?? 'unknown'}.`);
 
         setLoadingMessage('Processing results...');
 
@@ -419,77 +428,8 @@ const [visitedStations, setVisitedStations] = useState<{ id: string; name: strin
           .sort((a, b) => a.fuelPrices.regular - b.fuelPrices.regular)
           .map((station, index) => ({ ...station, isCheapest: index === 0 }));
 
-        setLoadingMessage('Placing markers on map...');
+        stationCacheRef.current.set(cacheKey, { timestamp: Date.now(), stations: stationsWithPrices });
         setAllStations(stationsWithPrices);
-        if (mapInstanceRef.current && mapboxRef.current) {
-          let bounds: any = null;
-          stationsWithPrices.forEach((f) => {
-            if (!mapInstanceRef.current || !mapboxRef.current) return;
-            const coords = f?.geometry?.coordinates;
-            if (!coords || coords.length < 2) return;
-            const [lng2, lat2] = coords;
-            const popup = new mapboxRef.current.Popup({ offset: 8 }).setHTML(
-              buildStationPopupHtml(f, lat, lng, favoriteIdsRef.current.has(f.id), reportedStationIdsRef.current.has(f.id))
-            );
-
-            popup.on('open', () => {
-              const popupElement = popup.getElement();
-              const button = popupElement?.querySelector(`[data-favorite-id="${f.id}"]`) as HTMLButtonElement | null;
-              if (!button) return;
-
-              button.onclick = async () => {
-                const currentlyFavorite = favoriteIdsRef.current.has(f.id);
-
-                if (currentlyFavorite) {
-                  const updated = await removeFavorite(f.id);
-                  const nextIds = new Set(updated.map((favorite) => favorite.id));
-                  setFavoriteIds(nextIds);
-                  setSavedFavorites(updated);
-                  button.textContent = '☆ Save';
-                  button.style.background = '#ffffff';
-                  button.style.color = '#111111';
-                } else {
-                  const updated = await addFavorite({
-                    id: f.id,
-                    name: f.text,
-                    address: f.place_name || f.geocoded_address,
-                  });
-                  const nextIds = new Set(updated.map((favorite) => favorite.id));
-                  setFavoriteIds(nextIds);
-                  setSavedFavorites(updated);
-                  button.textContent = '★ Saved';
-                  button.style.background = '#14532d';
-                  button.style.color = '#ffffff';
-                }
-              };
-
-              const reportButton = popupElement?.querySelector(`[data-report-id="${f.id}"]`) as HTMLButtonElement | null;
-              if (reportButton && !reportButton.disabled) {
-                reportButton.onclick = () => {
-                  setReportModalStation(f);
-                  setReportSuggestedPrice('');
-                  setReportFeedback(null);
-                };
-              }
-            });
-
-            const marker = new mapboxRef.current.Marker({
-              color: f.isCheapest ? '#16a34a' : '#e53935',
-              scale: f.isCheapest ? 1.45 : 1,
-            })
-              .setLngLat([lng2, lat2])
-              .setPopup(popup)
-              .addTo(mapInstanceRef.current);
-            stationMarkersRef.current.push(marker);
-
-            if (!bounds) bounds = new mapboxRef.current.LngLatBounds([lng2, lat2], [lng2, lat2]);
-            bounds.extend([lng2, lat2]);
-          });
-
-          if (bounds) {
-            mapInstanceRef.current.fitBounds(bounds, { padding: 50, maxZoom: 13 });
-          }
-        }
       } catch (err) {
         console.error('OpenStreetMap places fetch failed', err);
         setSearchError('OpenStreetMap is temporarily unavailable. Please try again in a moment.');
