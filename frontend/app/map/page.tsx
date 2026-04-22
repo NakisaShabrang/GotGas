@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { addFavorite, FavoriteStation, loadFavorites, removeFavorite } from '@/app/lib/favorites';
+import { getVisitedStations, isStationVisited, toggleVisitedStation } from "@/app/lib/visited";
 
 const DEFAULT_SEARCH_RADIUS_MILES = 5;
 
@@ -241,6 +242,7 @@ export default function MapPage() {
   const [savedFavorites, setSavedFavorites] = useState<FavoriteStation[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('');
+const [visitedStations, setVisitedStations] = useState<{ id: string; name: string; address?: string }[]>([]);
   const [locationQuery, setLocationQuery] = useState(() => {
     if (typeof window !== 'undefined') {
       return new URLSearchParams(window.location.search).get('location') || '';
@@ -648,6 +650,11 @@ export default function MapPage() {
       mapInstanceRef.current.fitBounds(bounds, { padding: 50, maxZoom: 13 });
     }
   }, [filteredStations, favoriteIds]);
+
+  useEffect(() => {
+    setVisitedStations(getVisitedStations());
+  }, []);
+
   const onSubmitLocation = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
@@ -980,14 +987,25 @@ export default function MapPage() {
             {filteredStations.map((s, i) => {
               // Display address in sidebar - prefer place_name, fallback to geocoded_address
               const displayAddress = s.place_name ? s.place_name : s.geocoded_address;
+              const stationId = String(s.id || i);
+              const isVisited = visitedStations.some((station) => station.id === stationId);
               return (
                 <li
-                  key={s.id || i}
+                  key={stationId}
                   style={{
                     marginBottom: '0.75rem',
-                    border: s.isCheapest ? '1px solid #16a34a' : '1px solid transparent',
+                    border: s.isCheapest
+                      ? '1px solid #16a34a'
+                      : isVisited
+                      ? '1px solid #3b82f6'
+                      : '1px solid transparent',
                     borderRadius: 8,
-                    background: s.isCheapest ? 'rgba(22, 163, 74, 0.08)' : 'transparent',
+                    background: s.isCheapest
+                      ? 'rgba(22, 163, 74, 0.08)'
+                      : isVisited
+                      ? 'rgba(59, 130, 246, 0.08)'
+                      : 'transparent',
+                    padding: '0.35rem 0.4rem',
                   }}
                 >
                   <button
@@ -999,17 +1017,42 @@ export default function MapPage() {
                       width: '100%',
                       cursor: 'pointer',
                       borderRadius: 8,
-                      padding: '0.35rem 0.4rem',
                     }}
                   >
                     <strong>
                       {s.text}
                       {s.isCheapest ? ' (Cheapest)' : ''}
+                      {isVisited ? ' ✔ Visited' : ''}
                     </strong>
-                    {displayAddress && <div style={{ opacity: 0.85, fontSize: '0.85rem' }}>{displayAddress}</div>}
+                    {displayAddress && (
+                      <div style={{ opacity: 0.85, fontSize: '0.85rem' }}>{displayAddress}</div>
+                    )}
                     <div style={{ opacity: 0.9, fontSize: '0.85rem' }}>
                       Regular ${s.fuelPrices.regular.toFixed(2)} · Mid ${s.fuelPrices.midGrade.toFixed(2)} · Premium ${s.fuelPrices.premium.toFixed(2)} · Diesel ${s.fuelPrices.diesel.toFixed(2)}
                     </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      toggleVisitedStation({
+                        id: stationId,
+                        name: s.text,
+                        address: displayAddress,
+                      });
+                      setVisitedStations(getVisitedStations());
+                    }}
+                    style={{
+                      marginTop: '0.4rem',
+                      padding: '0.35rem 0.6rem',
+                      borderRadius: 6,
+                      border: '1px solid #888',
+                      background: isVisited ? '#1d4ed8' : 'transparent',
+                      color: 'white',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {isVisited ? 'Unmark Visited' : 'Mark as Visited'}
                   </button>
                 </li>
               );

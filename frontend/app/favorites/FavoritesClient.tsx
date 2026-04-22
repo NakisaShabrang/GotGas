@@ -4,20 +4,25 @@ import { useEffect, useState } from "react";
 import {
   addStationToFavoriteGroup,
   createFavoriteGroup,
+  deleteFavoriteNote,
   deleteFavoriteGroup,
   FavoriteGroup,
   FavoriteStation,
   getFavoriteGroupNameError,
+  getFavoriteNoteError,
   isValidFavoriteName,
   loadFavoriteGroups,
   loadFavorites,
   MAX_FAVORITE_GROUP_NAME_LENGTH,
   MAX_FAVORITE_NAME_LENGTH,
+  MAX_FAVORITE_NOTE_LENGTH,
   removeFavorite,
   removeStationFromFavoriteGroup,
   renameFavoriteGroup,
+  updateFavoriteNote,
   updateFavoriteName,
 } from "@/app/lib/favorites";
+import { getVisitedStations, toggleVisitedStation } from '@/app/lib/visited';
 
 const cardStyle = {
   border: "1px solid rgba(128,128,128,0.3)",
@@ -46,6 +51,18 @@ const inputStyle = {
   color: "var(--foreground)",
 };
 
+const noteTextStyle = {
+  margin: "6px 0 0",
+  fontSize: 13,
+  overflowWrap: "anywhere" as const,
+};
+
+const textareaStyle = {
+  ...inputStyle,
+  minHeight: 72,
+  resize: "vertical" as const,
+};
+
 export default function FavoritesClient() {
   const [favorites, setFavorites] = useState<FavoriteStation[]>([]);
   const [groups, setGroups] = useState<FavoriteGroup[]>([]);
@@ -60,12 +77,16 @@ export default function FavoritesClient() {
   const [groupRenameDraft, setGroupRenameDraft] = useState("");
   const [groupRenameError, setGroupRenameError] = useState("");
   const [expandedFavoriteId, setExpandedFavoriteId] = useState<string | null>(null);
+  const [noteEditingId, setNoteEditingId] = useState<string | null>(null);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [noteError, setNoteError] = useState("");
 
   useEffect(() => {
     async function fetchData() {
       const [favs, grps] = await Promise.all([loadFavorites(), loadFavoriteGroups()]);
       setFavorites(favs);
       setGroups(grps);
+      setVisitedStations(getVisitedStations());
       setLoading(false);
     }
     fetchData();
@@ -84,6 +105,10 @@ export default function FavoritesClient() {
 
     if (expandedFavoriteId === id) {
       setExpandedFavoriteId(null);
+    }
+
+    if (noteEditingId === id) {
+      handleCancelNote();
     }
   }
 
@@ -172,6 +197,109 @@ export default function FavoritesClient() {
   async function handleRemoveStationFromGroup(groupId: string, stationId: string) {
     const updated = await removeStationFromFavoriteGroup(groupId, stationId);
     setGroups(updated);
+  }
+
+  function handleStartNote(favorite: FavoriteStation) {
+    setNoteEditingId(favorite.id);
+    setNoteDraft(favorite.note ?? "");
+    setNoteError("");
+  }
+
+  function handleCancelNote() {
+    setNoteEditingId(null);
+    setNoteDraft("");
+    setNoteError("");
+  }
+
+  async function handleSaveNote(stationId: string) {
+    const error = getFavoriteNoteError(noteDraft);
+    if (error) {
+      setNoteError(error);
+      return;
+    }
+
+    const updated = await updateFavoriteNote(stationId, noteDraft);
+    setFavorites(updated);
+    handleCancelNote();
+  }
+
+  async function handleDeleteNote(stationId: string) {
+    const updated = await deleteFavoriteNote(stationId);
+    setFavorites(updated);
+
+    if (noteEditingId === stationId) {
+      handleCancelNote();
+    }
+  }
+
+  function renderNote(favorite: FavoriteStation) {
+    const isEditingNote = noteEditingId === favorite.id;
+
+    if (isEditingNote) {
+      return (
+        <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+          <label htmlFor={`favorite-note-${favorite.id}`} style={{ fontSize: 13 }}>
+            Station note
+          </label>
+          <textarea
+            id={`favorite-note-${favorite.id}`}
+            value={noteDraft}
+            onChange={(event) => {
+              setNoteDraft(event.target.value);
+              if (noteError) {
+                setNoteError("");
+              }
+            }}
+            maxLength={MAX_FAVORITE_NOTE_LENGTH}
+            style={textareaStyle}
+          />
+          <div style={{ fontSize: 12, opacity: 0.75 }}>
+            {noteDraft.length}/{MAX_FAVORITE_NOTE_LENGTH}
+          </div>
+          {noteError && (
+            <p role="alert" style={{ margin: 0, color: "#b91c1c", fontSize: 13 }}>
+              {noteError}
+            </p>
+          )}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button
+              onClick={() => handleSaveNote(favorite.id)}
+              style={{ ...secondaryButtonStyle, background: "#14532d", borderColor: "#14532d", color: "#ffffff" }}
+            >
+              Save Note
+            </button>
+            <button onClick={handleCancelNote} style={secondaryButtonStyle}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (!favorite.note) {
+      return null;
+    }
+
+    return <p style={noteTextStyle}>Note: {favorite.note}</p>;
+  }
+
+  function renderNoteActions(favorite: FavoriteStation) {
+    if (noteEditingId === favorite.id) {
+      return null;
+    }
+
+    return (
+      <>
+        <button onClick={() => handleStartNote(favorite)} style={secondaryButtonStyle}>
+          {favorite.note ? "Edit Note" : "Add Note"}
+        </button>
+        {favorite.note && (
+          <button onClick={() => handleDeleteNote(favorite.id)} style={secondaryButtonStyle}>
+            Delete Note
+          </button>
+        )}
+      </>
+    );
   }
 
   if (loading) {
@@ -345,13 +473,17 @@ export default function FavoritesClient() {
                           <div>
                             <div style={{ fontWeight: 600 }}>{station.name}</div>
                             {station.address && <div style={{ opacity: 0.8, fontSize: 13 }}>{station.address}</div>}
+                            {renderNote(station)}
                           </div>
-                          <button
-                            onClick={() => handleRemoveStationFromGroup(group.id, station.id)}
-                            style={secondaryButtonStyle}
-                          >
-                            Remove from List
-                          </button>
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                            {renderNoteActions(station)}
+                            <button
+                              onClick={() => handleRemoveStationFromGroup(group.id, station.id)}
+                              style={secondaryButtonStyle}
+                            >
+                              Remove from List
+                            </button>
+                          </div>
                         </li>
                       ))}
                     </ul>
@@ -372,6 +504,44 @@ export default function FavoritesClient() {
         </div>
 
         {!hasFavorites && <p style={{ margin: 0 }}>You have no favorites yet.</p>}
+          {visitedStations.length > 0 && (
+            <>
+              <h2 style={{ marginTop: 20, marginBottom: 10 }}>Visited Stations</h2>
+
+              <ul style={{ listStyle: "none", padding: 0, display: "grid", gap: 12 }}>
+                {visitedStations.map((station) => (
+                  <li key={station.id} style={{ ...cardStyle }}>
+                    <strong>{station.name}</strong>
+
+                    {station.address && (
+                      <div style={{ marginTop: 4, opacity: 0.8 }}>
+                        {station.address}
+                      </div>
+                    )}
+
+                    <div style={{ marginTop: 6 }}>
+                      <button
+                        onClick={() => {
+                          toggleVisitedStation(station);
+                          setVisitedStations(getVisitedStations());
+                        }}
+                        style={{
+                          background: "#2563eb",
+                          color: "white",
+                          padding: "6px 10px",
+                          borderRadius: 6,
+                          border: "none",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Remove from Visited
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
 
         {hasFavorites && (
           <ul style={{ listStyle: "none", padding: 0, display: "grid", gap: 12, margin: 0 }}>
@@ -425,6 +595,7 @@ export default function FavoritesClient() {
                           {favorite.address}
                         </div>
                       )}
+                      {renderNote(favorite)}
                     </div>
 
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -445,6 +616,8 @@ export default function FavoritesClient() {
                           Edit
                         </button>
                       )}
+
+                      {!isEditing && renderNoteActions(favorite)}
 
                       {isEditing && (
                         <>

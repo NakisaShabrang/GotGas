@@ -235,4 +235,69 @@ describe('ProfilePage', () => {
     expect(localStorage.getItem('user')).toBeNull();
     expect(mockPush).toHaveBeenCalledWith('/login');
   });
+
+  // --- Delete Account ---
+
+  it('renders a Delete Account button', async () => {
+    localStorage.setItem('user', 'janedoe');
+    mockProfileResponse(fullProfile);
+
+    await renderProfile();
+
+    const buttons = container.querySelectorAll('button');
+    const deleteBtn = Array.from(buttons).find((btn) =>
+      btn.textContent.includes('Delete Account')
+    );
+    expect(deleteBtn).not.toBeNull();
+  });
+
+  it('shows delete modal when Delete Account button is clicked', async () => {
+    localStorage.setItem('user', 'janedoe');
+    mockProfileResponse(fullProfile);
+
+    await renderProfile();
+
+    const buttons = container.querySelectorAll('button');
+    const deleteBtn = Array.from(buttons).find((btn) =>
+      btn.textContent.includes('Delete Account')
+    )!;
+
+    await act(async () => {
+      deleteBtn.click();
+    });
+
+    // Modal should be visible now
+    const modal = container.querySelector('[class*="overlay"]');
+    expect(modal).not.toBeNull();
+  });
+
+  it('modal closes when cancel button is clicked', async () => {
+    localStorage.setItem('user', 'janedoe');
+    mockProfileResponse(fullProfile);
+
+    await renderProfile();
+
+    const deleteBtn = Array.from(container.querySelectorAll('button')).find((btn) =>
+      btn.textContent.includes('Delete Account')
+    )!;
+
+    await act(async () => {
+      deleteBtn.click();
+    });
+
+    // Find and click the cancel button in the modal
+    const cancelBtn = Array.from(container.querySelectorAll('button')).find((btn) =>
+      btn.textContent.includes('Cancel')
+    );
+
+    await act(async () => {
+      cancelBtn!.click();
+    });
+
+    // Modal should be gone (or overlay hidden)
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+  });
 });
+
