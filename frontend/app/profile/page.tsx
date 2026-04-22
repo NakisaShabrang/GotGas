@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import DeleteAccountModal from "@/app/components/DeleteAccountModal";
 
-const API_URL = "http://localhost:5000";
+const API_URL = "/api";
 
 interface ProfileData {
   username: string;
@@ -33,6 +34,7 @@ const [passwordError, setPasswordError] = useState("");
 const [passwordSuccess, setPasswordSuccess] = useState("");
 const [passwordSaving, setPasswordSaving] = useState(false);
 
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -204,6 +206,11 @@ const handlePasswordSave = async () => {
   }
 };
 
+  const handleDeleteConfirmed = () => {
+    localStorage.removeItem("user");
+    router.push("/login?message=Account deleted successfully.");
+  };
+
   if (loading) {
     return (
       <div style={styles.container}>
@@ -350,6 +357,20 @@ const handlePasswordSave = async () => {
         <button onClick={handleLogout} style={styles.logoutBtn}>
           Log Out
         </button>
+
+        <button
+          onClick={() => setShowDeleteModal(true)}
+          style={styles.deleteBtn}
+        >
+          Delete Account
+        </button>
+
+        {showDeleteModal && (
+          <DeleteAccountModal
+            onClose={() => setShowDeleteModal(false)}
+            onConfirm={handleDeleteConfirmed}
+          />
+        )}
       </div>
     </div>
   );
@@ -513,6 +534,17 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: "#dc2626",
     color: "#ffffff",
     border: "none",
+    borderRadius: "6px",
+    cursor: "pointer",
+  },
+  deleteBtn: {
+    marginLeft: "12px",
+    padding: "10px 32px",
+    fontSize: "0.95rem",
+    fontWeight: 600,
+    backgroundColor: "#ef4444",
+    color: "#ffffff",
+    border: "1px solid #dc2626",
     borderRadius: "6px",
     cursor: "pointer",
   },
