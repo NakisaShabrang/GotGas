@@ -1,7 +1,7 @@
 import unittest
 import json
 import bcrypt
-from app import app, users_collection, favorites_collection, favorite_groups_collection, reports_collection, station_reviews_collection
+from app import app, users_collection, favorites_collection, favorite_groups_collection, _clear_reports, _load_reports, reports_collection, station_reviews_collection
 from datetime import datetime
 
 
@@ -12,16 +12,14 @@ class FlaskAppTest(unittest.TestCase):
         users_collection.delete_many({})
         favorites_collection.delete_many({})
         favorite_groups_collection.delete_many({})
-        reports_collection.delete_many({})
-        station_reviews_collection.delete_many({})
+        _clear_reports()
 
     def tearDown(self):
         # Clean up test data
         users_collection.delete_many({})
         favorites_collection.delete_many({})
         favorite_groups_collection.delete_many({})
-        reports_collection.delete_many({})
-        station_reviews_collection.delete_many({})
+        _clear_reports()
 
     def test_home_route(self):
         response = self.client.get("/")
@@ -292,9 +290,15 @@ class FlaskAppTest(unittest.TestCase):
             content_type="application/json",
         )
         self.assertEqual(response.status_code, 201)
-        report = reports_collection.find_one({"station_id": "osm-node-123"})
+        # Verify file
+        store = _load_reports()
+        report = next((r for r in store["reports"] if r["station_id"] == "osm-node-123"), None)
         self.assertIsNotNone(report)
         self.assertEqual(report["suggested_price"], 3.49)
+        # Verify database
+        db_report = reports_collection.find_one({"station_id": "osm-node-123"})
+        self.assertIsNotNone(db_report)
+        self.assertEqual(db_report["suggested_price"], 3.49)
 
     def test_report_station_invalid_price(self):
         self._register_and_login()
@@ -360,7 +364,8 @@ class FlaskAppTest(unittest.TestCase):
             self.client.post("/logout")
 
         # Verify the station is marked for review
-        review = station_reviews_collection.find_one({"station_id": "osm-node-999"})
+        store = _load_reports()
+        review = store["station_reviews"].get("osm-node-999")
         self.assertIsNotNone(review)
         self.assertTrue(review["under_review"])
         self.assertGreaterEqual(review["report_count"], 5)
@@ -376,7 +381,8 @@ class FlaskAppTest(unittest.TestCase):
             self.client.post("/logout")
 
         # Should not be under review yet
-        review = station_reviews_collection.find_one({"station_id": "osm-node-888"})
+        store = _load_reports()
+        review = store["station_reviews"].get("osm-node-888")
         self.assertIsNone(review)
         data = json.loads(response.data)
         self.assertFalse(data["under_review"])
@@ -406,6 +412,31 @@ class FlaskAppTest(unittest.TestCase):
         data = json.loads(response.data)
         self.assertTrue(data["reported"])
         self.assertEqual(data["report_count"], 1)
+
+
+    def test_clear_reports_clears_file_and_database(self):
+        # Submit a report so both stores have data
+        self._register_and_login()
+        self.client.post(
+            "/report-station",
+            data=json.dumps({"station_id": "osm-node-clear"}),
+            content_type="application/json",
+        )
+        # Confirm data exists in both
+        store = _load_reports()
+        self.assertTrue(len(store["reports"]) > 0)
+        self.assertTrue(reports_collection.count_documents({}) > 0)
+
+        # Clear
+        response = self.client.post("/clear-reports")
+        self.assertEqual(response.status_code, 200)
+
+        # Confirm both are empty
+        store = _load_reports()
+        self.assertEqual(store["reports"], [])
+        self.assertEqual(store["station_reviews"], {})
+        self.assertEqual(reports_collection.count_documents({}), 0)
+        self.assertEqual(station_reviews_collection.count_documents({}), 0)
 
 
 if __name__ == "__main__":

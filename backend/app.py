@@ -437,11 +437,37 @@ def update_password():
     )
     return jsonify({"message": "Password updated successfully"}), 200
 
-# --------------- Reports API ---------------
+# --------------- Reports API (file + database) ---------------
 
+import json
+
+REPORTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'reports.json')
+REPORTS_THRESHOLD = 5
 reports_collection = db['reports']
 station_reviews_collection = db['station_reviews']
-REPORTS_THRESHOLD = 5
+
+def _load_reports():
+    if not os.path.exists(REPORTS_FILE):
+        return {"reports": [], "station_reviews": {}}
+    try:
+        with open(REPORTS_FILE, 'r') as f:
+            return json.load(f)
+    except Exception:
+        return {"reports": [], "station_reviews": {}}
+
+def _save_reports(data):
+    with open(REPORTS_FILE, 'w') as f:
+        json.dump(data, f, indent=2)
+
+def _clear_reports():
+    _save_reports({"reports": [], "station_reviews": {}})
+    reports_collection.delete_many({})
+    station_reviews_collection.delete_many({})
+
+@app.route("/clear-reports", methods=["POST"])
+def clear_reports_endpoint():
+    _clear_reports()
+    return jsonify({"message": "Reports cleared"}), 200
 
 @app.route("/report-station", methods=["POST"])
 def report_station():
@@ -466,21 +492,43 @@ def report_station():
         except ValueError:
             return jsonify({"error": "Invalid suggested price"}), 400
 
+    store = _load_reports()
+    reports = store["reports"]
+
     # Duplicate check: a user can only report a station once
-    if reports_collection.find_one({"username": session['user'], "station_id": station_id}):
+    already_reported = any(
+        r["username"] == session['user'] and r["station_id"] == station_id
+        for r in reports
+    )
+    if already_reported:
         return jsonify({"error": "You have already reported this station"}), 409
 
-    reports_collection.insert_one({
+    report_doc = {
         "username": session['user'],
         "station_id": station_id,
         "station_name": station_name or "Unknown",
         "suggested_price": suggested_price,
-        "created_at": datetime.utcnow(),
-    })
+        "created_at": datetime.utcnow().isoformat(),
+    }
 
-    report_count = reports_collection.count_documents({"station_id": station_id})
+    # Write to file
+    reports.append(report_doc)
+    report_count = sum(1 for r in reports if r["station_id"] == station_id)
 
-    # When 5 users flag a station, mark it for review
+    if report_count >= REPORTS_THRESHOLD:
+        store["station_reviews"][station_id] = {
+            "station_id": station_id,
+            "station_name": station_name or "Unknown",
+            "under_review": True,
+            "report_count": report_count,
+            "flagged_at": datetime.utcnow().isoformat(),
+        }
+
+    store["reports"] = reports
+    _save_reports(store)
+
+    # Write to database
+    reports_collection.insert_one({**report_doc, "created_at": datetime.utcnow()})
     if report_count >= REPORTS_THRESHOLD:
         station_reviews_collection.update_one(
             {"station_id": station_id},
@@ -505,10 +553,16 @@ def get_station_report_status(station_id):
     if 'user' not in session:
         return jsonify({"error": "Please log in first"}), 401
 
-    reported = reports_collection.find_one({"username": session['user'], "station_id": station_id}) is not None
-    report_count = reports_collection.count_documents({"station_id": station_id})
-    review = station_reviews_collection.find_one({"station_id": station_id})
-    under_review = bool(review and review.get("under_review", False))
+    store = _load_reports()
+    reports = store["reports"]
+    reviews = store["station_reviews"]
+
+    reported = any(
+        r["username"] == session['user'] and r["station_id"] == station_id
+        for r in reports
+    )
+    report_count = sum(1 for r in reports if r["station_id"] == station_id)
+    under_review = bool(reviews.get(station_id, {}).get("under_review", False))
 
     return jsonify({
         "reported": reported,
