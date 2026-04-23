@@ -4,36 +4,96 @@ import { useEffect, useState } from "react";
 import {
   addStationToFavoriteGroup,
   createFavoriteGroup,
+  deleteFavoriteNote,
   deleteFavoriteGroup,
   FavoriteGroup,
   FavoriteStation,
   getFavoriteGroupNameError,
+  getFavoriteNoteError,
   isValidFavoriteName,
   loadFavoriteGroups,
   loadFavorites,
   MAX_FAVORITE_GROUP_NAME_LENGTH,
   MAX_FAVORITE_NAME_LENGTH,
+  MAX_FAVORITE_NOTE_LENGTH,
   removeFavorite,
   removeStationFromFavoriteGroup,
   renameFavoriteGroup,
+  updateFavoriteNote,
   updateFavoriteName,
 } from "@/app/lib/favorites";
+import { getVisitedStations, toggleVisitedStation, VisitedStation } from '@/app/lib/visited';
 
 const cardStyle = {
   border: "1px solid rgba(128,128,128,0.3)",
   borderRadius: 12,
-  padding: 12,
+  padding: 16,
   background: "var(--background)",
   color: "var(--foreground)",
 };
 
+const favoriteCardStyle = {
+  ...cardStyle,
+  borderLeft: "4px solid #16a34a",
+  paddingLeft: 14,
+};
+
+const groupCardStyle = {
+  border: "1px solid rgba(22, 163, 74, 0.4)",
+  borderRadius: 12,
+  background: "var(--background)",
+  color: "var(--foreground)",
+  overflow: "hidden" as const,
+};
+
+const groupHeaderStyle = {
+  background: "rgba(22, 163, 74, 0.08)",
+  borderBottom: "1px solid rgba(22, 163, 74, 0.2)",
+  padding: "12px 16px",
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "flex-start",
+  gap: 12,
+  flexWrap: "wrap" as const,
+};
+
+const groupBodyStyle = {
+  padding: "12px 16px",
+};
+
+const stationRowStyle = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  alignItems: "center",
+  background: "rgba(22, 163, 74, 0.04)",
+  border: "1px solid rgba(22, 163, 74, 0.15)",
+  borderRadius: 8,
+  padding: "10px 12px",
+};
+
 const secondaryButtonStyle = {
-  padding: "8px 10px",
-  borderRadius: 10,
-  border: "1px solid rgba(128,128,128,0.3)",
+  padding: "6px 12px",
+  borderRadius: 8,
+  border: "1px solid rgba(128,128,128,0.35)",
   background: "var(--background)",
   color: "#16a34a",
   cursor: "pointer",
+  fontSize: 13,
+  fontWeight: 500,
+};
+
+const dangerButtonStyle = {
+  ...secondaryButtonStyle,
+  color: "#b91c1c",
+  borderColor: "rgba(185, 28, 28, 0.3)",
+};
+
+const primaryButtonStyle = {
+  ...secondaryButtonStyle,
+  background: "#14532d",
+  borderColor: "#14532d",
+  color: "#ffffff",
 };
 
 const inputStyle = {
@@ -44,6 +104,20 @@ const inputStyle = {
   border: "1px solid rgba(128,128,128,0.3)",
   background: "var(--background)",
   color: "var(--foreground)",
+};
+
+const noteTextStyle = {
+  margin: "6px 0 0",
+  fontSize: 13,
+  overflowWrap: "anywhere" as const,
+  opacity: 0.85,
+  fontStyle: "italic" as const,
+};
+
+const textareaStyle = {
+  ...inputStyle,
+  minHeight: 72,
+  resize: "vertical" as const,
 };
 
 export default function FavoritesClient() {
@@ -60,12 +134,21 @@ export default function FavoritesClient() {
   const [groupRenameDraft, setGroupRenameDraft] = useState("");
   const [groupRenameError, setGroupRenameError] = useState("");
   const [expandedFavoriteId, setExpandedFavoriteId] = useState<string | null>(null);
+  const [noteEditingId, setNoteEditingId] = useState<string | null>(null);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [noteError, setNoteError] = useState("");
+  const [visitedStations, setVisitedStations] = useState<VisitedStation[]>([]);
+
+  function isVisitedStation(stationId: string) {
+    return visitedStations.some((station) => station.id === stationId);
+  }
 
   useEffect(() => {
     async function fetchData() {
       const [favs, grps] = await Promise.all([loadFavorites(), loadFavoriteGroups()]);
       setFavorites(favs);
       setGroups(grps);
+      setVisitedStations(getVisitedStations());
       setLoading(false);
     }
     fetchData();
@@ -84,6 +167,10 @@ export default function FavoritesClient() {
 
     if (expandedFavoriteId === id) {
       setExpandedFavoriteId(null);
+    }
+
+    if (noteEditingId === id) {
+      handleCancelNote();
     }
   }
 
@@ -174,6 +261,114 @@ export default function FavoritesClient() {
     setGroups(updated);
   }
 
+  function handleStartNote(favorite: FavoriteStation) {
+    setNoteEditingId(favorite.id);
+    setNoteDraft(favorite.note ?? "");
+    setNoteError("");
+  }
+
+  function handleCancelNote() {
+    setNoteEditingId(null);
+    setNoteDraft("");
+    setNoteError("");
+  }
+
+  async function handleSaveNote(stationId: string) {
+    const error = getFavoriteNoteError(noteDraft);
+    if (error) {
+      setNoteError(error);
+      return;
+    }
+
+    const updated = await updateFavoriteNote(stationId, noteDraft);
+    setFavorites(updated);
+    handleCancelNote();
+  }
+
+  async function handleDeleteNote(stationId: string) {
+    const updated = await deleteFavoriteNote(stationId);
+    setFavorites(updated);
+
+    if (noteEditingId === stationId) {
+      handleCancelNote();
+    }
+  }
+
+  function handleToggleVisited(station: FavoriteStation) {
+    toggleVisitedStation({ id: station.id, name: station.name, address: station.address });
+    setVisitedStations(getVisitedStations());
+  }
+
+  function renderNote(favorite: FavoriteStation) {
+    const isEditingNote = noteEditingId === favorite.id;
+
+    if (isEditingNote) {
+      return (
+        <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+          <label htmlFor={`favorite-note-${favorite.id}`} style={{ fontSize: 13 }}>
+            Station note
+          </label>
+          <textarea
+            id={`favorite-note-${favorite.id}`}
+            value={noteDraft}
+            onChange={(event) => {
+              setNoteDraft(event.target.value);
+              if (noteError) {
+                setNoteError("");
+              }
+            }}
+            maxLength={MAX_FAVORITE_NOTE_LENGTH}
+            style={textareaStyle}
+          />
+          <div style={{ fontSize: 12, opacity: 0.75 }}>
+            {noteDraft.length}/{MAX_FAVORITE_NOTE_LENGTH}
+          </div>
+          {noteError && (
+            <p role="alert" style={{ margin: 0, color: "#b91c1c", fontSize: 13 }}>
+              {noteError}
+            </p>
+          )}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button
+              onClick={() => handleSaveNote(favorite.id)}
+              style={primaryButtonStyle}
+            >
+              Save Note
+            </button>
+            <button onClick={handleCancelNote} style={secondaryButtonStyle}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (!favorite.note) {
+      return null;
+    }
+
+    return <p style={noteTextStyle}>Note: {favorite.note}</p>;
+  }
+
+  function renderNoteActions(favorite: FavoriteStation) {
+    if (noteEditingId === favorite.id) {
+      return null;
+    }
+
+    return (
+      <>
+        <button onClick={() => handleStartNote(favorite)} style={secondaryButtonStyle}>
+          {favorite.note ? "Edit Note" : "Add Note"}
+        </button>
+        {favorite.note && (
+          <button onClick={() => handleDeleteNote(favorite.id)} style={secondaryButtonStyle}>
+            Delete Note
+          </button>
+        )}
+      </>
+    );
+  }
+
   if (loading) {
     return <p style={{ opacity: 0.8 }}>Loading favorites...</p>;
   }
@@ -194,9 +389,9 @@ export default function FavoritesClient() {
           }}
         >
           <div>
-            <h2 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Lists</h2>
+            <h2 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>My Lists</h2>
             <p style={{ margin: "4px 0 0", opacity: 0.8 }}>
-              Create custom groups for home, work, and travel stops.
+              Organize your saved stations into groups.
             </p>
           </div>
           <button onClick={() => setIsCreatingGroup((current) => !current)} style={secondaryButtonStyle}>
@@ -229,7 +424,7 @@ export default function FavoritesClient() {
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button
                 onClick={handleCreateGroup}
-                style={{ ...secondaryButtonStyle, background: "#14532d", borderColor: "#14532d", color: "#ffffff" }}
+                style={primaryButtonStyle}
               >
                 Save List
               </button>
@@ -250,7 +445,7 @@ export default function FavoritesClient() {
         {!hasGroups && <p style={{ margin: 0 }}>No lists yet. Create one to organize your favorite stations.</p>}
 
         {hasGroups && (
-          <div style={{ display: "grid", gap: 12 }}>
+          <div style={{ display: "grid", gap: 16 }}>
             {groups.map((group) => {
               const stations = group.stationIds
                 .map((stationId) => favorites.find((favorite) => favorite.id === stationId))
@@ -258,18 +453,24 @@ export default function FavoritesClient() {
               const isRenamingGroup = groupRenameId === group.id;
 
               return (
-                <div key={group.id} style={{ ...cardStyle, display: "grid", gap: 12 }}>
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "flex-start",
-                      gap: 12,
-                      flexWrap: "wrap",
-                    }}
-                  >
+                <div key={group.id} style={groupCardStyle}>
+                  <div style={groupHeaderStyle}>
                     <div style={{ flex: 1, minWidth: 220 }}>
-                      {!isRenamingGroup && <div style={{ fontSize: 18, fontWeight: 700 }}>{group.name}</div>}
+                      {!isRenamingGroup && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <span style={{ fontSize: 18, fontWeight: 700 }}>{group.name}</span>
+                          <span style={{
+                            background: "#16a34a",
+                            color: "#fff",
+                            borderRadius: 20,
+                            padding: "2px 9px",
+                            fontSize: 12,
+                            fontWeight: 600,
+                          }}>
+                            {stations.length} station{stations.length !== 1 ? "s" : ""}
+                          </span>
+                        </div>
+                      )}
 
                       {isRenamingGroup && (
                         <div style={{ display: "grid", gap: 8 }}>
@@ -295,12 +496,6 @@ export default function FavoritesClient() {
                           )}
                         </div>
                       )}
-
-                      <p style={{ margin: "4px 0 0", opacity: 0.8, fontSize: 13 }}>
-                        {stations.length === 0
-                          ? "No stations in this list yet."
-                          : `${stations.length} station${stations.length === 1 ? "" : "s"} in this list.`}
-                      </p>
                     </div>
 
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -311,10 +506,7 @@ export default function FavoritesClient() {
                       )}
                       {isRenamingGroup && (
                         <>
-                          <button
-                            onClick={() => handleConfirmGroupRename(group.id)}
-                            style={{ ...secondaryButtonStyle, background: "#14532d", borderColor: "#14532d", color: "#ffffff" }}
-                          >
+                          <button onClick={() => handleConfirmGroupRename(group.id)} style={primaryButtonStyle}>
                             Save
                           </button>
                           <button onClick={handleCancelGroupRename} style={secondaryButtonStyle}>
@@ -322,40 +514,62 @@ export default function FavoritesClient() {
                           </button>
                         </>
                       )}
-                      <button onClick={() => handleDeleteGroup(group.id)} style={secondaryButtonStyle}>
-                        Delete
+                      <button onClick={() => handleDeleteGroup(group.id)} style={dangerButtonStyle}>
+                        Delete List
                       </button>
                     </div>
                   </div>
 
-                  {stations.length > 0 && (
-                    <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 8 }}>
-                      {stations.map((station) => (
-                        <li
-                          key={`${group.id}-${station.id}`}
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            gap: 12,
-                            alignItems: "center",
-                            borderTop: "1px solid rgba(128,128,128,0.2)",
-                            paddingTop: 8,
-                          }}
-                        >
-                          <div>
-                            <div style={{ fontWeight: 600 }}>{station.name}</div>
-                            {station.address && <div style={{ opacity: 0.8, fontSize: 13 }}>{station.address}</div>}
-                          </div>
-                          <button
-                            onClick={() => handleRemoveStationFromGroup(group.id, station.id)}
-                            style={secondaryButtonStyle}
-                          >
-                            Remove from List
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                  <div style={groupBodyStyle}>
+                    {stations.length === 0 && (
+                      <p style={{ margin: 0, opacity: 0.7, fontSize: 14 }}>
+                        No stations in this list yet. Use "Add to List" on any favorite below.
+                      </p>
+                    )}
+
+                    {stations.length > 0 && (
+                      <ol style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 8, counterReset: "station-counter" }}>
+                        {stations.map((station, index) => (
+                          <li key={`${group.id}-${station.id}`} style={stationRowStyle}>
+                            <div style={{ display: "flex", alignItems: "flex-start", gap: 10, flex: 1 }}>
+                              <span style={{
+                                background: "#16a34a",
+                                color: "#fff",
+                                borderRadius: "50%",
+                                width: 24,
+                                height: 24,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                fontSize: 12,
+                                fontWeight: 700,
+                                flexShrink: 0,
+                                marginTop: 1,
+                              }}>
+                                {index + 1}
+                              </span>
+                              <div>
+                                <div style={{ fontWeight: 600 }}>{station.name}</div>
+                                {station.address && (
+                                  <div style={{ opacity: 0.75, fontSize: 13, marginTop: 2 }}>{station.address}</div>
+                                )}
+                                {renderNote(station)}
+                              </div>
+                            </div>
+                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end", flexShrink: 0 }}>
+                              {renderNoteActions(station)}
+                              <button
+                                onClick={() => handleRemoveStationFromGroup(group.id, station.id)}
+                                style={dangerButtonStyle}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -365,32 +579,62 @@ export default function FavoritesClient() {
 
       <section style={{ display: "grid", gap: 12 }}>
         <div>
-          <h2 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>All Favorites</h2>
+          <h2 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Saved Stations</h2>
           <p style={{ margin: "4px 0 0", opacity: 0.8 }}>
-            Keep every saved station here, then add each stop to one or more lists.
+            Use "Add to List" to organize stations into groups.
           </p>
         </div>
 
-        {!hasFavorites && <p style={{ margin: 0 }}>You have no favorites yet.</p>}
+        {!hasFavorites && <p style={{ margin: 0, opacity: 0.7 }}>You have no favorites yet. Save a station from the map to get started.</p>}
 
         {hasFavorites && (
           <ul style={{ listStyle: "none", padding: 0, display: "grid", gap: 12, margin: 0 }}>
             {favorites.map((favorite) => {
               const isEditing = editingId === favorite.id;
               const isExpanded = expandedFavoriteId === favorite.id;
+              const memberOfGroups = groups.filter(g => g.stationIds.includes(favorite.id));
+              const isVisited = isVisitedStation(favorite.id);
 
               return (
-                <li key={favorite.id} style={{ ...cardStyle, display: "grid", gap: 12 }}>
+                <li
+                  key={favorite.id}
+                  style={{
+                    ...favoriteCardStyle,
+                    display: "grid",
+                    gap: 10,
+                    borderLeft: isVisited ? "4px solid #1d4ed8" : favoriteCardStyle.borderLeft,
+                    background: isVisited ? "rgba(29, 78, 216, 0.06)" : favoriteCardStyle.background,
+                  }}
+                >
                   <div
                     style={{
                       display: "flex",
                       justifyContent: "space-between",
-                      alignItems: "center",
+                      alignItems: "flex-start",
                       gap: 12,
                     }}
                   >
                     <div style={{ flex: 1 }}>
-                      {!isEditing && <div style={{ fontWeight: 700 }}>{favorite.name}</div>}
+                      {!isEditing && (
+                        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                          <div style={{ fontWeight: 700, fontSize: 15 }}>{favorite.name}</div>
+                          {isVisited && (
+                            <span
+                              style={{
+                                background: "rgba(29, 78, 216, 0.12)",
+                                border: "1px solid rgba(29, 78, 216, 0.25)",
+                                color: "#1d4ed8",
+                                borderRadius: 20,
+                                padding: "2px 9px",
+                                fontSize: 12,
+                                fontWeight: 600,
+                              }}
+                            >
+                              Visited
+                            </span>
+                          )}
+                        </div>
+                      )}
 
                       {isEditing && (
                         <div>
@@ -421,13 +665,33 @@ export default function FavoritesClient() {
                       )}
 
                       {favorite.address && (
-                        <div style={{ opacity: 0.8, fontSize: 13, marginTop: !isEditing ? 0 : 8 }}>
+                        <div style={{ opacity: 0.75, fontSize: 13, marginTop: 2 }}>
                           {favorite.address}
                         </div>
                       )}
+
+                      {memberOfGroups.length > 0 && (
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+                          {memberOfGroups.map(g => (
+                            <span key={g.id} style={{
+                              background: "rgba(22, 163, 74, 0.12)",
+                              border: "1px solid rgba(22, 163, 74, 0.3)",
+                              color: "#15803d",
+                              borderRadius: 20,
+                              padding: "2px 9px",
+                              fontSize: 12,
+                              fontWeight: 500,
+                            }}>
+                              {g.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {renderNote(favorite)}
                     </div>
 
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", flexShrink: 0 }}>
                       {!isEditing && (
                         <button
                           onClick={() =>
@@ -436,23 +700,28 @@ export default function FavoritesClient() {
                           aria-label={`Add ${favorite.name} to a list`}
                           style={secondaryButtonStyle}
                         >
-                          +
+                          {isExpanded ? "Cancel" : "Add to List"}
                         </button>
                       )}
 
                       {!isEditing && (
                         <button onClick={() => handleStartRename(favorite)} style={secondaryButtonStyle}>
-                          Edit
+                          Rename
+                        </button>
+                      )}
+
+                      {!isEditing && renderNoteActions(favorite)}
+
+                      {!isEditing && (
+                        <button onClick={() => handleToggleVisited(favorite)} style={secondaryButtonStyle}>
+                          {isVisited ? "Unmark Visited" : "Mark as Visited"}
                         </button>
                       )}
 
                       {isEditing && (
                         <>
-                          <button
-                            onClick={() => handleConfirmRename(favorite.id)}
-                            style={{ ...secondaryButtonStyle, background: "#14532d", borderColor: "#14532d", color: "#ffffff" }}
-                          >
-                            Confirm
+                          <button onClick={() => handleConfirmRename(favorite.id)} style={primaryButtonStyle}>
+                            Save
                           </button>
                           <button onClick={handleCancelRename} style={secondaryButtonStyle}>
                             Cancel
@@ -460,21 +729,34 @@ export default function FavoritesClient() {
                         </>
                       )}
 
-                      <button onClick={() => handleRemove(favorite.id)} style={secondaryButtonStyle}>
+                      <button onClick={() => handleRemove(favorite.id)} style={dangerButtonStyle}>
                         Remove
                       </button>
                     </div>
                   </div>
 
                   {isExpanded && (
-                    <div style={{ borderTop: "1px solid rgba(128,128,128,0.2)", paddingTop: 12 }}>
+                    <div style={{
+                      borderTop: "1px solid rgba(22, 163, 74, 0.2)",
+                      paddingTop: 12,
+                      background: "rgba(22, 163, 74, 0.03)",
+                      borderRadius: "0 0 8px 8px",
+                      marginLeft: -14,
+                      marginRight: -16,
+                      marginBottom: -16,
+                      paddingLeft: 14,
+                      paddingRight: 16,
+                      paddingBottom: 14,
+                    }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, opacity: 0.8 }}>
+                        Add "{favorite.name}" to a list:
+                      </div>
                       {!hasGroups && (
-                        <p style={{ margin: 0 }}>Create a list first, then add this station to it.</p>
+                        <p style={{ margin: 0, opacity: 0.7, fontSize: 13 }}>No lists yet — create one above first.</p>
                       )}
 
                       {hasGroups && (
                         <div style={{ display: "grid", gap: 8 }}>
-                          <div style={{ fontSize: 13, opacity: 0.8 }}>Add this station to a list</div>
                           {groups.map((group) => {
                             const isInGroup = group.stationIds.includes(favorite.id);
 
@@ -486,19 +768,26 @@ export default function FavoritesClient() {
                                   justifyContent: "space-between",
                                   alignItems: "center",
                                   gap: 12,
+                                  padding: "8px 10px",
+                                  borderRadius: 8,
+                                  border: "1px solid rgba(128,128,128,0.2)",
+                                  background: isInGroup ? "rgba(22, 163, 74, 0.07)" : "var(--background)",
                                 }}
                               >
-                                <span>{group.name}</span>
+                                <span style={{ fontWeight: 500 }}>{group.name}</span>
                                 <button
-                                  onClick={() => handleAddStationToGroup(group.id, favorite.id)}
+                                  onClick={() => !isInGroup && handleAddStationToGroup(group.id, favorite.id)}
                                   disabled={isInGroup}
                                   style={{
                                     ...secondaryButtonStyle,
-                                    opacity: isInGroup ? 0.6 : 1,
-                                    cursor: isInGroup ? "not-allowed" : "pointer",
+                                    opacity: isInGroup ? 1 : 1,
+                                    cursor: isInGroup ? "default" : "pointer",
+                                    background: isInGroup ? "rgba(22, 163, 74, 0.15)" : "var(--background)",
+                                    color: isInGroup ? "#15803d" : "#16a34a",
+                                    borderColor: isInGroup ? "rgba(22, 163, 74, 0.4)" : "rgba(128,128,128,0.35)",
                                   }}
                                 >
-                                  {isInGroup ? "Added" : "Add to List"}
+                                  {isInGroup ? "✓ In this list" : "Add to List"}
                                 </button>
                               </div>
                             );
@@ -513,6 +802,40 @@ export default function FavoritesClient() {
           </ul>
         )}
       </section>
+
+      {visitedStations.length > 0 && (
+        <section style={{ display: "grid", gap: 12 }}>
+          <div>
+            <h2 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Visited Stations</h2>
+            <p style={{ margin: "4px 0 0", opacity: 0.8 }}>
+              Stations you have marked as visited.
+            </p>
+          </div>
+          <ul style={{ listStyle: "none", padding: 0, display: "grid", gap: 12, margin: 0 }}>
+            {visitedStations.map((station) => (
+              <li key={station.id} style={{ ...favoriteCardStyle }}>
+                <strong>{station.name}</strong>
+                {station.address && (
+                  <div style={{ marginTop: 4, opacity: 0.8, fontSize: 13 }}>
+                    {station.address}
+                  </div>
+                )}
+                <div style={{ marginTop: 8 }}>
+                  <button
+                    onClick={() => {
+                      toggleVisitedStation(station);
+                      setVisitedStations(getVisitedStations());
+                    }}
+                    style={dangerButtonStyle}
+                  >
+                    Remove from Visited
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   );
 }

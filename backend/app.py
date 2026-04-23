@@ -1,20 +1,38 @@
-from flask import Flask, jsonify, request, session
+from flask import Flask, jsonify, request, session, make_response
 from flask_cors import CORS
 from pymongo import MongoClient
 import bcrypt
 import os
 from dotenv import load_dotenv
 from datetime import timedelta, datetime
+import re
 
 # Load environment variables
 load_dotenv()  
 app = Flask(__name__)
-CORS(app, supports_credentials=True, origins=["http://localhost:3000"])
+CORS(app, supports_credentials=True, origins=["http://localhost:3000", "http://127.0.0.1:3000"])
 
 app.secret_key = os.getenv('SECRET_KEY', 'secret')
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_SECURE'] = False
 app.permanent_session_lifetime = timedelta(days=7)
+
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        response = make_response()
+        response.status_code = 200
+        return response
+
+@app.after_request
+def apply_cors(response):
+    origin = request.headers.get("Origin")
+    if origin == "http://localhost:3000":
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, PUT, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    return response
 
 # MongoDB connection - IMPORTANT: Remove the default fallback
 MONGODB_URI = os.getenv('MONGODB_URI')
@@ -25,6 +43,12 @@ users_collection = db['users']
 
 # Create index on username for faster lookups, not necessary but I like it
 users_collection.create_index('username', unique=True)
+MAX_FAVORITE_NOTE_LENGTH = 160
+EMAIL_PATTERN = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
+
+
+def is_valid_email(email):
+    return bool(EMAIL_PATTERN.match(email))
 
 @app.route("/")
 def home():
@@ -88,12 +112,14 @@ def login():
     if bcrypt.checkpw(password.encode('utf-8'), user["password"]):
         session.permanent = True
         session["user"] = username
+        session.pop("delete_account_verified", None)
         return jsonify({"message": "Login successful", "username": username}), 200
     
     return jsonify({"error": "Invalid username or password"}), 401
 
 @app.route("/logout", methods=["POST"])
 def logout():
+    session.pop("delete_account_verified", None)
     session.pop("user", None)
     return jsonify({"message": "Logged out"}), 200
 
@@ -160,6 +186,57 @@ def profile():
         "memberSince": created_at,
     }), 200
 
+@app.route("/verify-password", methods=["POST"])
+def verify_password():
+    if 'user' not in session:
+        return jsonify({"error": "Please log in first"}), 401
+    
+    data = request.get_json()
+    password = data.get("password")
+    
+    if not password:
+        return jsonify({"error": "Password is required"}), 400
+    
+    user = users_collection.find_one({"username": session['user']})
+    
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    
+    if not bcrypt.checkpw(password.encode('utf-8'), user["password"]):
+        session.pop("delete_account_verified", None)
+        return jsonify({"error": "Invalid password"}), 401
+
+    session["delete_account_verified"] = True
+    return jsonify({"message": "Password verified"}), 200
+
+@app.route("/delete-account", methods=["DELETE"])
+def delete_account():
+    if 'user' not in session:
+        return jsonify({"error": "Please log in first"}), 401
+
+    if not session.get("delete_account_verified"):
+        return jsonify({"error": "Password confirmation required"}), 403
+    
+    username = session['user']
+    
+    # Delete user from users collection
+    result = users_collection.delete_one({"username": username})
+    
+    if result.deleted_count == 0:
+        return jsonify({"error": "User not found"}), 404
+    
+    # Delete all favorites associated with the user
+    favorites_collection.delete_many({"username": username})
+    
+    # Delete all favorite groups associated with the user
+    favorite_groups_collection.delete_many({"username": username})
+    
+    # Clear session
+    session.pop("delete_account_verified", None)
+    session.pop("user", None)
+    
+    return jsonify({"message": "Account deleted successfully"}), 200
+
 # --------------- Favorites API ---------------
 
 favorites_collection = db['favorites']
@@ -218,6 +295,30 @@ def update_favorite_name(station_id):
         {"$set": {"name": name}}
     )
     return jsonify({"message": "Name updated"}), 200
+
+@app.route("/favorites/<station_id>/note", methods=["PUT"])
+def update_favorite_note(station_id):
+    if 'user' not in session:
+        return jsonify({"error": "Please log in first"}), 401
+    data = request.get_json()
+    note = data.get("note", "").strip()
+    if not note or len(note) > MAX_FAVORITE_NOTE_LENGTH:
+        return jsonify({"error": "Invalid note"}), 400
+    favorites_collection.update_one(
+        {"username": session['user'], "id": station_id},
+        {"$set": {"note": note}}
+    )
+    return jsonify({"message": "Note updated"}), 200
+
+@app.route("/favorites/<station_id>/note", methods=["DELETE"])
+def delete_favorite_note(station_id):
+    if 'user' not in session:
+        return jsonify({"error": "Please log in first"}), 401
+    favorites_collection.update_one(
+        {"username": session['user'], "id": station_id},
+        {"$unset": {"note": ""}}
+    )
+    return jsonify({"message": "Note deleted"}), 200
 
 # --------------- Favorite Groups API ---------------
 
@@ -296,6 +397,208 @@ def remove_station_from_group(group_id, station_id):
         {"$pull": {"stationIds": station_id}}
     )
     return jsonify({"message": "Station removed from group"}), 200
+
+@app.route("/profile/email", methods=["PATCH"])
+def update_email():
+    if 'user' not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = request.get_json()
+    new_email = data.get("email", "").strip()
+    current_user = users_collection.find_one({"username": session["user"]})
+
+    if not current_user:
+        return jsonify({"error": "User not found"}), 404
+
+    if not new_email:
+        return jsonify({"message": "Email cannot be empty"}), 400
+
+    if not is_valid_email(new_email):
+        return jsonify({"message": "Please enter a valid email address"}), 400
+
+    current_email = (current_user.get("email") or "").strip()
+    if current_email.lower() == new_email.lower():
+        return jsonify({"message": "New email must be different from your current email"}), 400
+
+    existing = users_collection.find_one({"email": {"$regex": f"^{re.escape(new_email)}$", "$options": "i"}})
+    if existing and existing["username"] != session["user"]:
+        return jsonify({"message": "Email already in use"}), 409
+
+    users_collection.update_one(
+        {"username": session["user"]},
+        {"$set": {"email": new_email}}
+    )
+    return jsonify({"message": "Email updated successfully"}), 200
+
+@app.route("/profile/password", methods=["PATCH"])
+def update_password():
+    if 'user' not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = request.get_json()
+    current_password = data.get("currentPassword", "")
+    new_password = data.get("newPassword", "")
+    confirm_new_password = data.get("confirmNewPassword", "")
+
+    if not current_password or not new_password or not confirm_new_password:
+        return jsonify({"error": "All password fields are required"}), 400
+
+    if len(new_password) < 6:
+        return jsonify({"error": "Password must be at least 6 characters"}), 400
+
+    if new_password != confirm_new_password:
+        return jsonify({"error": "Passwords do not match"}), 400
+
+    user = users_collection.find_one({"username": session['user']})
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    if not bcrypt.checkpw(current_password.encode('utf-8'), user["password"]):
+        return jsonify({"error": "Current password is incorrect"}), 401
+
+    if bcrypt.checkpw(new_password.encode('utf-8'), user["password"]):
+        return jsonify({"error": "New password must be different from your current password"}), 400
+
+    hashed = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
+    users_collection.update_one(
+        {"username": session['user']},
+        {"$set": {"password": hashed}}
+    )
+    session.pop("delete_account_verified", None)
+    return jsonify({"message": "Password updated successfully"}), 200
+
+# --------------- Reports API (file + database) ---------------
+
+import json
+
+REPORTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'reports.json')
+REPORTS_THRESHOLD = 5
+reports_collection = db['reports']
+station_reviews_collection = db['station_reviews']
+
+def _load_reports():
+    if not os.path.exists(REPORTS_FILE):
+        return {"reports": [], "station_reviews": {}}
+    try:
+        with open(REPORTS_FILE, 'r') as f:
+            return json.load(f)
+    except Exception:
+        return {"reports": [], "station_reviews": {}}
+
+def _save_reports(data):
+    with open(REPORTS_FILE, 'w') as f:
+        json.dump(data, f, indent=2)
+
+def _clear_reports():
+    _save_reports({"reports": [], "station_reviews": {}})
+    reports_collection.delete_many({})
+    station_reviews_collection.delete_many({})
+
+@app.route("/clear-reports", methods=["POST"])
+def clear_reports_endpoint():
+    _clear_reports()
+    return jsonify({"message": "Reports cleared"}), 200
+
+@app.route("/report-station", methods=["POST"])
+def report_station():
+    if 'user' not in session:
+        return jsonify({"error": "Please log in first"}), 401
+
+    data = request.get_json()
+    station_id = (data.get("station_id") or "").strip()
+    station_name = (data.get("station_name") or "").strip()
+    raw_price = data.get("suggested_price")
+
+    if not station_id:
+        return jsonify({"error": "station_id is required"}), 400
+
+    suggested_price = None
+    if raw_price is not None and str(raw_price).strip() != "":
+        try:
+            price_val = float(str(raw_price).strip())
+            if price_val <= 0 or price_val > 20:
+                return jsonify({"error": "Suggested price must be between $0.01 and $20.00"}), 400
+            suggested_price = round(price_val, 2)
+        except ValueError:
+            return jsonify({"error": "Invalid suggested price"}), 400
+
+    store = _load_reports()
+    reports = store["reports"]
+
+    # Duplicate check: a user can only report a station once
+    already_reported = any(
+        r["username"] == session['user'] and r["station_id"] == station_id
+        for r in reports
+    )
+    if already_reported:
+        return jsonify({"error": "You have already reported this station"}), 409
+
+    report_doc = {
+        "username": session['user'],
+        "station_id": station_id,
+        "station_name": station_name or "Unknown",
+        "suggested_price": suggested_price,
+        "created_at": datetime.utcnow().isoformat(),
+    }
+
+    # Write to file
+    reports.append(report_doc)
+    report_count = sum(1 for r in reports if r["station_id"] == station_id)
+
+    if report_count >= REPORTS_THRESHOLD:
+        store["station_reviews"][station_id] = {
+            "station_id": station_id,
+            "station_name": station_name or "Unknown",
+            "under_review": True,
+            "report_count": report_count,
+            "flagged_at": datetime.utcnow().isoformat(),
+        }
+
+    store["reports"] = reports
+    _save_reports(store)
+
+    # Write to database
+    reports_collection.insert_one({**report_doc, "created_at": datetime.utcnow()})
+    if report_count >= REPORTS_THRESHOLD:
+        station_reviews_collection.update_one(
+            {"station_id": station_id},
+            {"$set": {
+                "station_id": station_id,
+                "station_name": station_name or "Unknown",
+                "under_review": True,
+                "report_count": report_count,
+                "flagged_at": datetime.utcnow(),
+            }},
+            upsert=True,
+        )
+
+    return jsonify({
+        "message": "Report submitted successfully",
+        "report_count": report_count,
+        "under_review": report_count >= REPORTS_THRESHOLD,
+    }), 201
+
+@app.route("/report-station/<station_id>", methods=["GET"])
+def get_station_report_status(station_id):
+    if 'user' not in session:
+        return jsonify({"error": "Please log in first"}), 401
+
+    store = _load_reports()
+    reports = store["reports"]
+    reviews = store["station_reviews"]
+
+    reported = any(
+        r["username"] == session['user'] and r["station_id"] == station_id
+        for r in reports
+    )
+    report_count = sum(1 for r in reports if r["station_id"] == station_id)
+    under_review = bool(reviews.get(station_id, {}).get("under_review", False))
+
+    return jsonify({
+        "reported": reported,
+        "report_count": report_count,
+        "under_review": under_review,
+    }), 200
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
