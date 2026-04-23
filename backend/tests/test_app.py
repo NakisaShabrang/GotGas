@@ -25,6 +25,25 @@ class FlaskAppTest(unittest.TestCase):
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
 
+    def _register_and_login(self, username="testuser", password="password123"):
+        self.client.post(
+            "/register",
+            data=json.dumps({"username": username, "password": password}),
+            content_type="application/json",
+        )
+        self.client.post(
+            "/login",
+            data=json.dumps({"username": username, "password": password}),
+            content_type="application/json",
+        )
+
+    def _verify_delete_password(self, password="password123"):
+        return self.client.post(
+            "/verify-password",
+            data=json.dumps({"password": password}),
+            content_type="application/json",
+        )
+
     # --- Verify Password Tests ---
 
     def test_verify_password_not_logged_in(self):
@@ -83,23 +102,9 @@ class FlaskAppTest(unittest.TestCase):
         self.assertEqual(data["error"], "Invalid password")
 
     def test_verify_password_correct_password(self):
-        # Register and login
-        self.client.post(
-            "/register",
-            data=json.dumps({"username": "testuser", "password": "password123"}),
-            content_type="application/json",
-        )
-        self.client.post(
-            "/login",
-            data=json.dumps({"username": "testuser", "password": "password123"}),
-            content_type="application/json",
-        )
+        self._register_and_login()
 
-        response = self.client.post(
-            "/verify-password",
-            data=json.dumps({"password": "password123"}),
-            content_type="application/json",
-        )
+        response = self._verify_delete_password()
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.data)
         self.assertEqual(data["message"], "Password verified")
@@ -114,23 +119,13 @@ class FlaskAppTest(unittest.TestCase):
         self.assertEqual(data["error"], "Please log in first")
 
     def test_delete_account_success(self):
-        # Register and login
-        self.client.post(
-            "/register",
-            data=json.dumps({"username": "testuser", "password": "password123"}),
-            content_type="application/json",
-        )
-        self.client.post(
-            "/login",
-            data=json.dumps({"username": "testuser", "password": "password123"}),
-            content_type="application/json",
-        )
+        self._register_and_login()
 
         # Verify user exists
         user_before = users_collection.find_one({"username": "testuser"})
         self.assertIsNotNone(user_before)
 
-        # Delete account
+        self._verify_delete_password()
         response = self.client.delete("/delete-account")
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.data)
@@ -141,17 +136,7 @@ class FlaskAppTest(unittest.TestCase):
         self.assertIsNone(user_after)
 
     def test_delete_account_removes_favorites(self):
-        # Register, login, add favorites
-        self.client.post(
-            "/register",
-            data=json.dumps({"username": "testuser", "password": "password123"}),
-            content_type="application/json",
-        )
-        self.client.post(
-            "/login",
-            data=json.dumps({"username": "testuser", "password": "password123"}),
-            content_type="application/json",
-        )
+        self._register_and_login()
 
         # Add some favorites
         self.client.post(
@@ -170,7 +155,7 @@ class FlaskAppTest(unittest.TestCase):
         favorite_before = favorites_collection.find_one({"username": "testuser"})
         self.assertIsNotNone(favorite_before)
 
-        # Delete account
+        self._verify_delete_password()
         self.client.delete("/delete-account")
 
         # Verify favorites are deleted
@@ -178,17 +163,7 @@ class FlaskAppTest(unittest.TestCase):
         self.assertEqual(len(favorite_after), 0)
 
     def test_delete_account_removes_favorite_groups(self):
-        # Register, login, add favorite group
-        self.client.post(
-            "/register",
-            data=json.dumps({"username": "testuser", "password": "password123"}),
-            content_type="application/json",
-        )
-        self.client.post(
-            "/login",
-            data=json.dumps({"username": "testuser", "password": "password123"}),
-            content_type="application/json",
-        )
+        self._register_and_login()
 
         # Add a favorite group
         self.client.post(
@@ -201,7 +176,7 @@ class FlaskAppTest(unittest.TestCase):
         group_before = favorite_groups_collection.find_one({"username": "testuser"})
         self.assertIsNotNone(group_before)
 
-        # Delete account
+        self._verify_delete_password()
         self.client.delete("/delete-account")
 
         # Verify groups are deleted
@@ -209,19 +184,9 @@ class FlaskAppTest(unittest.TestCase):
         self.assertEqual(len(group_after), 0)
 
     def test_delete_account_clears_session(self):
-        # Register and login
-        self.client.post(
-            "/register",
-            data=json.dumps({"username": "testuser", "password": "password123"}),
-            content_type="application/json",
-        )
-        self.client.post(
-            "/login",
-            data=json.dumps({"username": "testuser", "password": "password123"}),
-            content_type="application/json",
-        )
+        self._register_and_login()
 
-        # Delete account
+        self._verify_delete_password()
         response = self.client.delete("/delete-account")
         self.assertEqual(response.status_code, 200)
 
@@ -229,20 +194,80 @@ class FlaskAppTest(unittest.TestCase):
         profile_response = self.client.get("/profile")
         self.assertEqual(profile_response.status_code, 401)
 
+    def test_delete_account_requires_verified_password(self):
+        self._register_and_login()
+
+        response = self.client.delete("/delete-account")
+
+        self.assertEqual(response.status_code, 403)
+        data = json.loads(response.data)
+        self.assertEqual(data["error"], "Password confirmation required")
+
+    def test_update_email_rejects_invalid_email(self):
+        self._register_and_login()
+
+        response = self.client.patch(
+            "/profile/email",
+            data=json.dumps({"email": "not-an-email"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.data)
+        self.assertEqual(data["message"], "Please enter a valid email address")
+
+    def test_update_email_rejects_duplicate_email_case_insensitive(self):
+        self._register_and_login(username="firstuser")
+        users_collection.update_one({"username": "firstuser"}, {"$set": {"email": "one@example.com"}})
+        self.client.post("/logout")
+        self._register_and_login(username="seconduser")
+
+        response = self.client.patch(
+            "/profile/email",
+            data=json.dumps({"email": "ONE@example.com"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 409)
+        data = json.loads(response.data)
+        self.assertEqual(data["message"], "Email already in use")
+
+    def test_update_password_requires_confirmation_match(self):
+        self._register_and_login()
+
+        response = self.client.patch(
+            "/profile/password",
+            data=json.dumps({
+                "currentPassword": "password123",
+                "newPassword": "newpassword123",
+                "confirmNewPassword": "different123",
+            }),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.data)
+        self.assertEqual(data["error"], "Passwords do not match")
+
+    def test_update_password_success_updates_hash(self):
+        self._register_and_login()
+
+        response = self.client.patch(
+            "/profile/password",
+            data=json.dumps({
+                "currentPassword": "password123",
+                "newPassword": "newpassword123",
+                "confirmNewPassword": "newpassword123",
+            }),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        updated_user = users_collection.find_one({"username": "testuser"})
+        self.assertTrue(bcrypt.checkpw("newpassword123".encode("utf-8"), updated_user["password"]))
+
 
     # --- Report Station Tests ---
-
-    def _register_and_login(self, username="testuser", password="password123"):
-        self.client.post(
-            "/register",
-            data=json.dumps({"username": username, "password": password}),
-            content_type="application/json",
-        )
-        self.client.post(
-            "/login",
-            data=json.dumps({"username": username, "password": password}),
-            content_type="application/json",
-        )
 
     def test_report_station_not_logged_in(self):
         response = self.client.post(

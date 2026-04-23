@@ -5,6 +5,7 @@ import bcrypt
 import os
 from dotenv import load_dotenv
 from datetime import timedelta, datetime
+import re
 
 # Load environment variables
 load_dotenv()  
@@ -43,6 +44,11 @@ users_collection = db['users']
 # Create index on username for faster lookups, not necessary but I like it
 users_collection.create_index('username', unique=True)
 MAX_FAVORITE_NOTE_LENGTH = 160
+EMAIL_PATTERN = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
+
+
+def is_valid_email(email):
+    return bool(EMAIL_PATTERN.match(email))
 
 @app.route("/")
 def home():
@@ -106,12 +112,14 @@ def login():
     if bcrypt.checkpw(password.encode('utf-8'), user["password"]):
         session.permanent = True
         session["user"] = username
+        session.pop("delete_account_verified", None)
         return jsonify({"message": "Login successful", "username": username}), 200
     
     return jsonify({"error": "Invalid username or password"}), 401
 
 @app.route("/logout", methods=["POST"])
 def logout():
+    session.pop("delete_account_verified", None)
     session.pop("user", None)
     return jsonify({"message": "Logged out"}), 200
 
@@ -195,14 +203,19 @@ def verify_password():
         return jsonify({"error": "User not found"}), 404
     
     if not bcrypt.checkpw(password.encode('utf-8'), user["password"]):
+        session.pop("delete_account_verified", None)
         return jsonify({"error": "Invalid password"}), 401
-    
+
+    session["delete_account_verified"] = True
     return jsonify({"message": "Password verified"}), 200
 
 @app.route("/delete-account", methods=["DELETE"])
 def delete_account():
     if 'user' not in session:
         return jsonify({"error": "Please log in first"}), 401
+
+    if not session.get("delete_account_verified"):
+        return jsonify({"error": "Password confirmation required"}), 403
     
     username = session['user']
     
@@ -219,6 +232,7 @@ def delete_account():
     favorite_groups_collection.delete_many({"username": username})
     
     # Clear session
+    session.pop("delete_account_verified", None)
     session.pop("user", None)
     
     return jsonify({"message": "Account deleted successfully"}), 200
@@ -391,11 +405,22 @@ def update_email():
 
     data = request.get_json()
     new_email = data.get("email", "").strip()
+    current_user = users_collection.find_one({"username": session["user"]})
+
+    if not current_user:
+        return jsonify({"error": "User not found"}), 404
 
     if not new_email:
         return jsonify({"message": "Email cannot be empty"}), 400
 
-    existing = users_collection.find_one({"email": new_email})
+    if not is_valid_email(new_email):
+        return jsonify({"message": "Please enter a valid email address"}), 400
+
+    current_email = (current_user.get("email") or "").strip()
+    if current_email.lower() == new_email.lower():
+        return jsonify({"message": "New email must be different from your current email"}), 400
+
+    existing = users_collection.find_one({"email": {"$regex": f"^{re.escape(new_email)}$", "$options": "i"}})
     if existing and existing["username"] != session["user"]:
         return jsonify({"message": "Email already in use"}), 409
 
@@ -413,12 +438,16 @@ def update_password():
     data = request.get_json()
     current_password = data.get("currentPassword", "")
     new_password = data.get("newPassword", "")
+    confirm_new_password = data.get("confirmNewPassword", "")
 
-    if not current_password or not new_password:
-        return jsonify({"error": "Both fields are required"}), 400
+    if not current_password or not new_password or not confirm_new_password:
+        return jsonify({"error": "All password fields are required"}), 400
 
     if len(new_password) < 6:
         return jsonify({"error": "Password must be at least 6 characters"}), 400
+
+    if new_password != confirm_new_password:
+        return jsonify({"error": "Passwords do not match"}), 400
 
     user = users_collection.find_one({"username": session['user']})
     if not user:
@@ -435,6 +464,7 @@ def update_password():
         {"username": session['user']},
         {"$set": {"password": hashed}}
     )
+    session.pop("delete_account_verified", None)
     return jsonify({"message": "Password updated successfully"}), 200
 
 # --------------- Reports API (file + database) ---------------

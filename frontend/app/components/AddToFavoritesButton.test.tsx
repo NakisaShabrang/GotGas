@@ -54,9 +54,14 @@ describe('AddToFavoritesButton', () => {
       await new Promise((r) => setTimeout(r, 0));
     });
 
-    expect(mockFetch).toHaveBeenCalledWith(
-      'http://localhost:5000/favorites',
-      expect.objectContaining({ method: 'POST' })
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      1,
+      '/api/favorites',
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      })
     );
   });
 

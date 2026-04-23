@@ -13,6 +13,7 @@ describe('DeleteAccountModal', () => {
   let root: Root;
   const mockOnClose = jest.fn();
   const mockOnConfirm = jest.fn();
+  const mockOnUnauthorized = jest.fn();
 
   beforeEach(() => {
     container = document.createElement('div');
@@ -21,6 +22,7 @@ describe('DeleteAccountModal', () => {
     mockFetch.mockReset();
     mockOnClose.mockReset();
     mockOnConfirm.mockReset();
+    mockOnUnauthorized.mockReset();
   });
 
   afterEach(async () => {
@@ -38,6 +40,41 @@ describe('DeleteAccountModal', () => {
     });
     await act(async () => {
       await new Promise((r) => setTimeout(r, 10));
+    });
+  }
+
+  async function setPassword(value: string) {
+    const input = container.querySelector('input[type="password"]') as HTMLInputElement;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    await act(async () => {
+      setValue?.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  }
+
+  function findButton(label: string) {
+    return Array.from(container.querySelectorAll('button')).find(
+      (btn) => btn.textContent?.trim() === label
+    ) as HTMLButtonElement | undefined;
+  }
+
+  async function moveToConfirmation() {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ message: 'Password verified' }),
+    });
+
+    await renderModal();
+    await setPassword('password123');
+
+    await act(async () => {
+      findButton('Next')?.click();
+    });
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
     });
   }
 
@@ -68,15 +105,9 @@ describe('DeleteAccountModal', () => {
 
     it('enables Next button when password is entered', async () => {
       await renderModal();
-      const input = container.querySelector('input[type="password"]') as HTMLInputElement;
-      const nextBtn = Array.from(container.querySelectorAll('button')).find((btn) =>
-        btn.textContent.includes('Next')
-      ) as HTMLButtonElement;
+      const nextBtn = findButton('Next')!;
 
-      await act(async () => {
-        input.value = 'password123';
-        input.dispatchEvent(new Event('change', { bubbles: true }));
-      });
+      await setPassword('password123');
 
       expect(nextBtn.disabled).toBe(false);
     });
@@ -88,23 +119,16 @@ describe('DeleteAccountModal', () => {
       });
 
       await renderModal();
-      const input = container.querySelector('input[type="password"]') as HTMLInputElement;
+      await setPassword('password123');
 
-      await act(async () => {
-        input.value = 'password123';
-        input.dispatchEvent(new Event('change', { bubbles: true }));
-      });
-
-      const nextBtn = Array.from(container.querySelectorAll('button')).find((btn) =>
-        btn.textContent.includes('Next')
-      )!;
+      const nextBtn = findButton('Next')!;
 
       await act(async () => {
         nextBtn.click();
       });
 
       expect(mockFetch).toHaveBeenCalledWith(
-        'http://localhost:5000/verify-password',
+        '/api/verify-password',
         expect.objectContaining({
           method: 'POST',
           credentials: 'include',
@@ -120,16 +144,9 @@ describe('DeleteAccountModal', () => {
       });
 
       await renderModal();
-      const input = container.querySelector('input[type="password"]') as HTMLInputElement;
+      await setPassword('wrongpassword');
 
-      await act(async () => {
-        input.value = 'wrongpassword';
-        input.dispatchEvent(new Event('change', { bubbles: true }));
-      });
-
-      const nextBtn = Array.from(container.querySelectorAll('button')).find((btn) =>
-        btn.textContent.includes('Next')
-      )!;
+      const nextBtn = findButton('Next')!;
 
       await act(async () => {
         nextBtn.click();
@@ -169,65 +186,20 @@ describe('DeleteAccountModal', () => {
 
   describe('Confirmation Step', () => {
     it('shows confirmation message after password verification', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ message: 'Password verified' }),
-      });
-
-      await renderModal();
-      const input = container.querySelector('input[type="password"]') as HTMLInputElement;
-
-      await act(async () => {
-        input.value = 'password123';
-        input.dispatchEvent(new Event('change', { bubbles: true }));
-      });
-
-      const nextBtn = Array.from(container.querySelectorAll('button')).find((btn) =>
-        btn.textContent.includes('Next')
-      )!;
-
-      await act(async () => {
-        nextBtn.click();
-      });
-
-      await act(async () => {
-        await new Promise((r) => setTimeout(r, 50));
-      });
+      await moveToConfirmation();
 
       expect(container.textContent).toContain('Confirm Account Deletion');
       expect(container.textContent).toContain('Are you sure you want to delete your account?');
     });
 
     it('shows secondary confirmation buttons', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ message: 'Password verified' }),
-      });
-
-      await renderModal();
-      const input = container.querySelector('input[type="password"]') as HTMLInputElement;
-
-      await act(async () => {
-        input.value = 'password123';
-        input.dispatchEvent(new Event('change', { bubbles: true }));
-      });
-
-      const nextBtn = Array.from(container.querySelectorAll('button')).find((btn) =>
-        btn.textContent.includes('Next')
-      )!;
-
-      await act(async () => {
-        nextBtn.click();
-      });
-
-      await act(async () => {
-        await new Promise((r) => setTimeout(r, 50));
-      });
+      await moveToConfirmation();
 
       const buttons = container.querySelectorAll('button');
       const textContents = Array.from(buttons).map((btn) => btn.textContent);
-      expect(textContents.some((text) => text.includes('No, Cancel'))).toBe(true);
-      expect(textContents.some((text) => text.includes('Delete Account'))).toBe(true);
+      expect(textContents).toContain('Back');
+      expect(textContents).toContain('Cancel');
+      expect(textContents).toContain('Yes, Delete Account');
     });
 
     it('calls verify-password, then delete-account when confirmed', async () => {
@@ -241,29 +213,9 @@ describe('DeleteAccountModal', () => {
           json: () => Promise.resolve({ message: 'Account deleted' }),
         });
 
-      await renderModal();
-      const input = container.querySelector('input[type="password"]') as HTMLInputElement;
+      await moveToConfirmation();
 
-      await act(async () => {
-        input.value = 'password123';
-        input.dispatchEvent(new Event('change', { bubbles: true }));
-      });
-
-      const nextBtn = Array.from(container.querySelectorAll('button')).find((btn) =>
-        btn.textContent.includes('Next')
-      )!;
-
-      await act(async () => {
-        nextBtn.click();
-      });
-
-      await act(async () => {
-        await new Promise((r) => setTimeout(r, 50));
-      });
-
-      const deleteBtn = Array.from(container.querySelectorAll('button')).find((btn) =>
-        btn.textContent.includes('Yes, Delete Account')
-      )!;
+      const deleteBtn = findButton('Yes, Delete Account')!;
 
       await act(async () => {
         deleteBtn.click();
@@ -275,7 +227,7 @@ describe('DeleteAccountModal', () => {
 
       expect(mockFetch).toHaveBeenCalledTimes(2);
       expect(mockFetch).toHaveBeenLastCalledWith(
-        'http://localhost:5000/delete-account',
+        '/api/delete-account',
         expect.objectContaining({
           method: 'DELETE',
           credentials: 'include',
@@ -286,34 +238,9 @@ describe('DeleteAccountModal', () => {
     });
 
     it('allows going back to password step from confirmation', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ message: 'Password verified' }),
-      });
+      await moveToConfirmation();
 
-      await renderModal();
-      const input = container.querySelector('input[type="password"]') as HTMLInputElement;
-
-      await act(async () => {
-        input.value = 'password123';
-        input.dispatchEvent(new Event('change', { bubbles: true }));
-      });
-
-      const nextBtn = Array.from(container.querySelectorAll('button')).find((btn) =>
-        btn.textContent.includes('Next')
-      )!;
-
-      await act(async () => {
-        nextBtn.click();
-      });
-
-      await act(async () => {
-        await new Promise((r) => setTimeout(r, 50));
-      });
-
-      const noBtn = Array.from(container.querySelectorAll('button')).find((btn) =>
-        btn.textContent.includes('No, Cancel')
-      )!;
+      const noBtn = findButton('Back')!;
 
       await act(async () => {
         noBtn.click();
@@ -323,8 +250,7 @@ describe('DeleteAccountModal', () => {
         await new Promise((r) => setTimeout(r, 50));
       });
 
-      // Should be back at password step
-      expect(container.textContent).toContain('Enter your password');
+      expect(container.textContent).toContain('please enter your password for confirmation');
     });
 
     it('shows error if delete fails', async () => {
@@ -338,29 +264,9 @@ describe('DeleteAccountModal', () => {
           json: () => Promise.resolve({ error: 'Failed to delete account' }),
         });
 
-      await renderModal();
-      const input = container.querySelector('input[type="password"]') as HTMLInputElement;
+      await moveToConfirmation();
 
-      await act(async () => {
-        input.value = 'password123';
-        input.dispatchEvent(new Event('change', { bubbles: true }));
-      });
-
-      const nextBtn = Array.from(container.querySelectorAll('button')).find((btn) =>
-        btn.textContent.includes('Next')
-      )!;
-
-      await act(async () => {
-        nextBtn.click();
-      });
-
-      await act(async () => {
-        await new Promise((r) => setTimeout(r, 50));
-      });
-
-      const deleteBtn = Array.from(container.querySelectorAll('button')).find((btn) =>
-        btn.textContent.includes('Yes, Delete Account')
-      )!;
+      const deleteBtn = findButton('Yes, Delete Account')!;
 
       await act(async () => {
         deleteBtn.click();
@@ -372,6 +278,31 @@ describe('DeleteAccountModal', () => {
 
       expect(container.textContent).toContain('Failed to delete account');
       expect(mockOnConfirm).not.toHaveBeenCalled();
+    });
+
+    it('calls onUnauthorized when password verification returns 401', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: () => Promise.resolve({ error: 'Please log in first' }),
+      });
+
+      await act(async () => {
+        root.render(
+          <DeleteAccountModal
+            onClose={mockOnClose}
+            onConfirm={mockOnConfirm}
+            onUnauthorized={mockOnUnauthorized}
+          />
+        );
+      });
+
+      await setPassword('password123');
+      await act(async () => {
+        findButton('Next')?.click();
+      });
+
+      expect(mockOnUnauthorized).toHaveBeenCalled();
     });
   });
 });

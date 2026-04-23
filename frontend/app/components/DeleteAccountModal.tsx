@@ -6,6 +6,7 @@ import styles from "./DeleteAccountModal.module.css";
 interface DeleteAccountModalProps {
   onClose: () => void;
   onConfirm: () => void;
+  onUnauthorized?: () => void;
 }
 
 type ModalStep = "password" | "confirmation" | "loading" | "error";
@@ -13,6 +14,7 @@ type ModalStep = "password" | "confirmation" | "loading" | "error";
 export default function DeleteAccountModal({
   onClose,
   onConfirm,
+  onUnauthorized,
 }: DeleteAccountModalProps) {
   const [step, setStep] = useState<ModalStep>("password");
   const [password, setPassword] = useState("");
@@ -33,6 +35,11 @@ export default function DeleteAccountModal({
         credentials: "include",
         body: JSON.stringify({ password }),
       });
+
+      if (response.status === 401) {
+        onUnauthorized?.();
+        return;
+      }
 
       if (!response.ok) {
         const data = await response.json();
@@ -58,6 +65,19 @@ export default function DeleteAccountModal({
         method: "DELETE",
         credentials: "include",
       });
+
+      if (response.status === 401) {
+        onUnauthorized?.();
+        return;
+      }
+
+      if (response.status === 403) {
+        const data = await response.json();
+        setError(data.error || "Password confirmation required");
+        setStep("password");
+        setLoading(false);
+        return;
+      }
 
       if (!response.ok) {
         const data = await response.json();
@@ -131,17 +151,28 @@ export default function DeleteAccountModal({
             {error && <p className={styles.errorMessage}>{error}</p>}
             <div className={styles.buttonGroup}>
               <button
+                type="button"
                 onClick={() => {
                   setStep("password");
-                  setPassword("");
                   setError("");
                 }}
                 className={styles.cancelBtn}
                 disabled={loading}
               >
-                No, Cancel
+                Back
               </button>
               <button
+                type="button"
+                onClick={() => {
+                  handleCancel();
+                }}
+                className={styles.cancelBtn}
+                disabled={loading}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
                 onClick={handleConfirmDelete}
                 className={styles.deleteBtn}
                 disabled={loading}

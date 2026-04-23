@@ -93,8 +93,11 @@ describe('favorites API lib', () => {
     mockFetch.mockResolvedValueOnce(mockJsonResponse([]));
     await loadFavorites();
     expect(mockFetch).toHaveBeenCalledWith(
-      'http://localhost:5000/favorites',
-      expect.objectContaining({ credentials: 'include' })
+      '/api/favorites',
+      expect.objectContaining({
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      })
     );
   });
 
@@ -116,7 +119,7 @@ describe('favorites API lib', () => {
 
     expect(mockFetch).toHaveBeenCalledTimes(2);
     const [url, opts] = mockFetch.mock.calls[0];
-    expect(url).toBe('http://localhost:5000/favorites');
+    expect(url).toBe('/api/favorites');
     expect(opts.method).toBe('POST');
     expect(JSON.parse(opts.body)).toEqual(station);
     expect(result).toHaveLength(1);
@@ -133,7 +136,7 @@ describe('favorites API lib', () => {
     const result = await removeFavorite('s1');
 
     const [url, opts] = mockFetch.mock.calls[0];
-    expect(url).toBe('http://localhost:5000/favorites/s1');
+    expect(url).toBe('/api/favorites/s1');
     expect(opts.method).toBe('DELETE');
     expect(result).toEqual([]);
   });
@@ -148,7 +151,7 @@ describe('favorites API lib', () => {
     const result = await updateFavoriteName('s1', 'New Name');
 
     const [url, opts] = mockFetch.mock.calls[0];
-    expect(url).toBe('http://localhost:5000/favorites/s1/name');
+    expect(url).toBe('/api/favorites/s1/name');
     expect(opts.method).toBe('PUT');
     expect(result[0].name).toBe('New Name');
   });
@@ -163,7 +166,7 @@ describe('favorites API lib', () => {
     const result = await updateFavoriteNote('s1', '  Use pump 4  ');
 
     const [url, opts] = mockFetch.mock.calls[0];
-    expect(url).toBe('http://localhost:5000/favorites/s1/note');
+    expect(url).toBe('/api/favorites/s1/note');
     expect(opts.method).toBe('PUT');
     expect(JSON.parse(opts.body)).toEqual({ note: 'Use pump 4' });
     expect(result[0].note).toBe('Use pump 4');
@@ -177,7 +180,7 @@ describe('favorites API lib', () => {
     const result = await deleteFavoriteNote('s1');
 
     const [url, opts] = mockFetch.mock.calls[0];
-    expect(url).toBe('http://localhost:5000/favorites/s1/note');
+    expect(url).toBe('/api/favorites/s1/note');
     expect(opts.method).toBe('DELETE');
     expect(result[0].note).toBeUndefined();
   });
@@ -192,7 +195,7 @@ describe('favorites API lib', () => {
     const result = await createFavoriteGroup('Work');
 
     const [url, opts] = mockFetch.mock.calls[0];
-    expect(url).toBe('http://localhost:5000/favorite-groups');
+    expect(url).toBe('/api/favorite-groups');
     expect(opts.method).toBe('POST');
     expect(result).toHaveLength(1);
     expect(result[0].name).toBe('Work');
@@ -208,7 +211,7 @@ describe('favorites API lib', () => {
     const result = await deleteFavoriteGroup('g1');
 
     const [url, opts] = mockFetch.mock.calls[0];
-    expect(url).toBe('http://localhost:5000/favorite-groups/g1');
+    expect(url).toBe('/api/favorite-groups/g1');
     expect(opts.method).toBe('DELETE');
     expect(result).toEqual([]);
   });
@@ -223,7 +226,7 @@ describe('favorites API lib', () => {
     const result = await addStationToFavoriteGroup('g1', 's1');
 
     const [url, opts] = mockFetch.mock.calls[0];
-    expect(url).toBe('http://localhost:5000/favorite-groups/g1/stations/s1');
+    expect(url).toBe('/api/favorite-groups/g1/stations/s1');
     expect(opts.method).toBe('POST');
     expect(result[0].stationIds).toContain('s1');
   });
@@ -238,7 +241,7 @@ describe('favorites API lib', () => {
     const result = await removeStationFromFavoriteGroup('g1', 's1');
 
     const [url, opts] = mockFetch.mock.calls[0];
-    expect(url).toBe('http://localhost:5000/favorite-groups/g1/stations/s1');
+    expect(url).toBe('/api/favorite-groups/g1/stations/s1');
     expect(opts.method).toBe('DELETE');
     expect(result[0].stationIds).not.toContain('s1');
   });

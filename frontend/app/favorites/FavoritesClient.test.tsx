@@ -81,6 +81,7 @@ describe("FavoritesClient flows", () => {
     document.body.appendChild(container);
     root = createRoot(container);
     mockFetch.mockReset();
+    localStorage.clear();
   });
 
   afterEach(async () => {
@@ -106,16 +107,16 @@ describe("FavoritesClient flows", () => {
   it("shows an edit option for a saved favorite", async () => {
     mockInitialLoad(favorites, emptyGroups);
     await renderClient();
-    expect(findButton("Edit")).not.toBeNull();
+    expect(findButton("Rename")).not.toBeNull();
   });
 
   it("shows inline validation when rename is empty", async () => {
     mockInitialLoad(favorites, emptyGroups);
     await renderClient();
 
-    await clickButton("Edit");
+    await clickButton("Rename");
     await updateInputValue(findInputByIdPrefix("favorite-rename-"), "   ");
-    await clickButton("Confirm");
+    await clickButton("Save");
 
     const alert = container.querySelector('[role="alert"]');
     expect(alert?.textContent).toBe("Please enter a valid station name.");
@@ -125,7 +126,7 @@ describe("FavoritesClient flows", () => {
     mockInitialLoad(favorites, emptyGroups);
     await renderClient();
 
-    await clickButton("Edit");
+    await clickButton("Rename");
     await updateInputValue(findInputByIdPrefix("favorite-rename-"), "Do Not Save This");
     await clickButton("Cancel");
 
@@ -189,7 +190,7 @@ describe("FavoritesClient flows", () => {
     mockInitialLoad(favorites, groups);
     await renderClient();
     expect(container.textContent).toContain("Home Route");
-    expect(container.textContent).toContain("1 station in this list.");
+    expect(container.textContent).toContain("1 station");
   });
 
   it("adds a note to a favorite", async () => {
@@ -303,10 +304,35 @@ describe("FavoritesClient flows", () => {
     mockInitialLoad(favorites, groups);
     await renderClient();
 
-    const groupListItem = Array.from(container.querySelectorAll("li")).find((item) =>
-      item.textContent?.includes("Remove from List")
+    const addNoteButtons = Array.from(container.querySelectorAll("button")).filter(
+      (button) => button.textContent?.trim() === "Add Note"
     );
 
-    expect(groupListItem?.textContent).toContain("Add Note");
+    expect(addNoteButtons).toHaveLength(3);
+  });
+
+  it("highlights a visited station from local storage", async () => {
+    localStorage.setItem(
+      "visitedStations",
+      JSON.stringify([{ id: "station-1", name: "Shell Downtown", address: "123 Main St" }])
+    );
+    mockInitialLoad(favorites, emptyGroups);
+
+    await renderClient();
+
+    expect(container.textContent).toContain("Visited Stations");
+    expect(container.textContent).toContain("Visited");
+  });
+
+  it("toggles a station into the visited section", async () => {
+    mockInitialLoad(favorites, emptyGroups);
+
+    await renderClient();
+    await clickButton("Mark as Visited");
+
+    expect(container.textContent).toContain("Visited Stations");
+    expect(JSON.parse(localStorage.getItem("visitedStations") || "[]")).toEqual([
+      { id: "station-1", name: "Shell Downtown", address: "123 Main St" },
+    ]);
   });
 });

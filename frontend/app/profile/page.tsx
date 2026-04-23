@@ -37,6 +37,11 @@ const [passwordSaving, setPasswordSaving] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const router = useRouter();
 
+  const handleUnauthorized = () => {
+    localStorage.removeItem("user");
+    router.push("/login?message=Please log in to view your profile.");
+  };
+
   useEffect(() => {
     const user = localStorage.getItem("user");
     if (!user) {
@@ -47,8 +52,7 @@ const [passwordSaving, setPasswordSaving] = useState(false);
     fetch(`${API_URL}/profile`, { credentials: "include" })
       .then((res) => {
         if (res.status === 401) {
-          localStorage.removeItem("user");
-          router.push("/login?message=Please log in to view your profile.");
+          handleUnauthorized();
           return null;
         }
         if (!res.ok) throw new Error(`Server error: ${res.status}`);
@@ -146,65 +150,79 @@ const [passwordSaving, setPasswordSaving] = useState(false);
     }
   };
   const handlePasswordEdit = () => {
-  setCurrentPassword(""); setNewPassword(""); setConfirmPassword("");
-  setPasswordError(""); setPasswordSuccess("");
-  setEditingPassword(true);
-};
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setPasswordError("");
+    setPasswordSuccess("");
+    setEditingPassword(true);
+  };
 
-const handlePasswordCancel = () => {
-  setEditingPassword(false);
-  setCurrentPassword(""); setNewPassword(""); setConfirmPassword("");
-  setPasswordError("");
-};
+  const handlePasswordCancel = () => {
+    setEditingPassword(false);
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setPasswordError("");
+  };
 
-const handlePasswordSave = async () => {
-  if (!currentPassword || !newPassword || !confirmPassword) {
-    setPasswordError("All fields are required."); return;
-  }
-  if (newPassword.length < 6) {
-    setPasswordError("New password must be at least 6 characters."); return;
-  }
-  if (newPassword !== confirmPassword) {
-    setPasswordError("Passwords do not match."); return;
-  }
-
-  setPasswordSaving(true);
-  setPasswordError("");
-
-  try {
-    const res = await fetch(`${API_URL}/profile/password`, {
-      method: "PATCH",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ currentPassword, newPassword }),
-    });
-
-    if (res.status === 401) {
-      const body = await res.json().catch(() => ({}));
-      // distinguish session expiry vs wrong password
-      if (body?.error === "Current password is incorrect") {
-        setPasswordError("Current password is incorrect."); return;
-      }
-      localStorage.removeItem("user");
-      router.push("/login?message=Please log in to view your profile.");
+  const handlePasswordSave = async () => {
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setPasswordError("All password fields are required.");
+      return;
+    }
+    if (newPassword.length < 6) {
+      setPasswordError("Password must be at least 6 characters.");
+      return;
+    }
+    if (newPassword === currentPassword) {
+      setPasswordError("New password must be different from your current password.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError("Passwords do not match.");
       return;
     }
 
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      setPasswordError(body?.error || "Failed to update password."); return;
-    }
+    setPasswordSaving(true);
+    setPasswordError("");
 
-    setEditingPassword(false);
-    setCurrentPassword(""); setNewPassword(""); setConfirmPassword("");
-    setPasswordSuccess("Password updated successfully.");
-    setTimeout(() => setPasswordSuccess(""), 4000);
-  } catch {
-    setPasswordError("Network error. Please try again.");
-  } finally {
-    setPasswordSaving(false);
-  }
-};
+    try {
+      const res = await fetch(`${API_URL}/profile/password`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword, newPassword, confirmNewPassword: confirmPassword }),
+      });
+
+      if (res.status === 401) {
+        const body = await res.json().catch(() => ({}));
+        if (body?.error === "Current password is incorrect") {
+          setPasswordError("Current password is incorrect.");
+          return;
+        }
+        handleUnauthorized();
+        return;
+      }
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setPasswordError(body?.error || "Failed to update password.");
+        return;
+      }
+
+      setEditingPassword(false);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setPasswordSuccess("Password updated successfully.");
+      setTimeout(() => setPasswordSuccess(""), 4000);
+    } catch {
+      setPasswordError("Network error. Please try again.");
+    } finally {
+      setPasswordSaving(false);
+    }
+  };
 
   const handleDeleteConfirmed = () => {
     localStorage.removeItem("user");
@@ -380,6 +398,7 @@ const handlePasswordSave = async () => {
           <DeleteAccountModal
             onClose={() => setShowDeleteModal(false)}
             onConfirm={handleDeleteConfirmed}
+            onUnauthorized={handleUnauthorized}
           />
         )}
       </div>

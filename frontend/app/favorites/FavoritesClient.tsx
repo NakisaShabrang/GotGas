@@ -139,6 +139,10 @@ export default function FavoritesClient() {
   const [noteError, setNoteError] = useState("");
   const [visitedStations, setVisitedStations] = useState<VisitedStation[]>([]);
 
+  function isVisitedStation(stationId: string) {
+    return visitedStations.some((station) => station.id === stationId);
+  }
+
   useEffect(() => {
     async function fetchData() {
       const [favs, grps] = await Promise.all([loadFavorites(), loadFavoriteGroups()]);
@@ -288,6 +292,11 @@ export default function FavoritesClient() {
     if (noteEditingId === stationId) {
       handleCancelNote();
     }
+  }
+
+  function handleToggleVisited(station: FavoriteStation) {
+    toggleVisitedStation({ id: station.id, name: station.name, address: station.address });
+    setVisitedStations(getVisitedStations());
   }
 
   function renderNote(favorite: FavoriteStation) {
@@ -584,9 +593,19 @@ export default function FavoritesClient() {
               const isEditing = editingId === favorite.id;
               const isExpanded = expandedFavoriteId === favorite.id;
               const memberOfGroups = groups.filter(g => g.stationIds.includes(favorite.id));
+              const isVisited = isVisitedStation(favorite.id);
 
               return (
-                <li key={favorite.id} style={{ ...favoriteCardStyle, display: "grid", gap: 10 }}>
+                <li
+                  key={favorite.id}
+                  style={{
+                    ...favoriteCardStyle,
+                    display: "grid",
+                    gap: 10,
+                    borderLeft: isVisited ? "4px solid #1d4ed8" : favoriteCardStyle.borderLeft,
+                    background: isVisited ? "rgba(29, 78, 216, 0.06)" : favoriteCardStyle.background,
+                  }}
+                >
                   <div
                     style={{
                       display: "flex",
@@ -597,7 +616,24 @@ export default function FavoritesClient() {
                   >
                     <div style={{ flex: 1 }}>
                       {!isEditing && (
-                        <div style={{ fontWeight: 700, fontSize: 15 }}>{favorite.name}</div>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                          <div style={{ fontWeight: 700, fontSize: 15 }}>{favorite.name}</div>
+                          {isVisited && (
+                            <span
+                              style={{
+                                background: "rgba(29, 78, 216, 0.12)",
+                                border: "1px solid rgba(29, 78, 216, 0.25)",
+                                color: "#1d4ed8",
+                                borderRadius: 20,
+                                padding: "2px 9px",
+                                fontSize: 12,
+                                fontWeight: 600,
+                              }}
+                            >
+                              Visited
+                            </span>
+                          )}
+                        </div>
                       )}
 
                       {isEditing && (
@@ -675,6 +711,12 @@ export default function FavoritesClient() {
                       )}
 
                       {!isEditing && renderNoteActions(favorite)}
+
+                      {!isEditing && (
+                        <button onClick={() => handleToggleVisited(favorite)} style={secondaryButtonStyle}>
+                          {isVisited ? "Unmark Visited" : "Mark as Visited"}
+                        </button>
+                      )}
 
                       {isEditing && (
                         <>
